@@ -30,6 +30,7 @@ typedef struct DecodeOptions {
 	int compression;
 	int bench;
 	int help;
+	int debugArgv;
 } DecodeOptions;
 
 typedef struct DecodeStats {
@@ -54,6 +55,131 @@ typedef struct SvxWriter {
 	unsigned char fibPending;
 } SvxWriter;
 
+#ifdef AMIGA_M68K
+typedef struct NormalizedArgs {
+	int argc;
+	char **argv;
+	char *storage;
+} NormalizedArgs;
+
+static int AmigaArgStringNeedsSplit(int argc, char **argv)
+{
+	const char *s;
+
+	if (argc != 1 || !argv || !argv[0])
+		return 0;
+
+	s = argv[0];
+	if (s[0] == '-')
+		return 1;
+
+	while (*s) {
+		if (*s == ' ' || *s == '\t')
+			return 1;
+		s++;
+	}
+
+	return 0;
+}
+
+static int AmigaNormalizeArgs(int argc, char **argv, NormalizedArgs *normalized)
+{
+	const char *src;
+	const char *p;
+	char *dst;
+	int tokens;
+	int inToken;
+	int i;
+
+	normalized->argc = argc;
+	normalized->argv = argv;
+	normalized->storage = NULL;
+
+	if (!AmigaArgStringNeedsSplit(argc, argv))
+		return 0;
+
+	src = argv[0];
+	tokens = 0;
+	inToken = 0;
+	for (p = src; *p; p++) {
+		if (*p == ' ' || *p == '\t') {
+			inToken = 0;
+		} else if (!inToken) {
+			tokens++;
+			inToken = 1;
+		}
+	}
+
+	normalized->argv = (char **)malloc((tokens + 2) * sizeof(char *));
+	if (!normalized->argv)
+		return -1;
+
+	normalized->storage = (char *)malloc(strlen(src) + 1);
+	if (!normalized->storage) {
+		free(normalized->argv);
+		normalized->argv = argv;
+		return -1;
+	}
+
+	strcpy(normalized->storage, src);
+	normalized->argv[0] = (char *)"amiga_mp3dec";
+	i = 1;
+	dst = normalized->storage;
+	while (*dst) {
+		while (*dst == ' ' || *dst == '\t') {
+			*dst = '\0';
+			dst++;
+		}
+		if (!*dst)
+			break;
+		normalized->argv[i++] = dst;
+		while (*dst && *dst != ' ' && *dst != '\t')
+			dst++;
+	}
+	normalized->argv[i] = NULL;
+	normalized->argc = i;
+
+	return 0;
+}
+
+static void AmigaFreeNormalizedArgs(NormalizedArgs *normalized)
+{
+	if (normalized->storage) {
+		free(normalized->storage);
+		free(normalized->argv);
+	}
+	normalized->storage = NULL;
+	normalized->argv = NULL;
+	normalized->argc = 0;
+}
+#else
+typedef struct NormalizedArgs {
+	int argc;
+	char **argv;
+} NormalizedArgs;
+
+static int AmigaNormalizeArgs(int argc, char **argv, NormalizedArgs *normalized)
+{
+	normalized->argc = argc;
+	normalized->argv = argv;
+	return 0;
+}
+
+static void AmigaFreeNormalizedArgs(NormalizedArgs *normalized)
+{
+	(void)normalized;
+}
+#endif
+
+static void PrintArgvDebug(int argc, char **argv)
+{
+	int i;
+
+	printf("argc: %d\n", argc);
+	for (i = 0; i < argc; i++)
+		printf("argv[%d]: %s\n", i, argv[i] ? argv[i] : "(null)");
+}
+
 static void PrintUsage(const char *prog)
 {
 	printf("usage: %s [options] infile.mp3 outfile\n", prog);
@@ -63,6 +189,7 @@ static void PrintUsage(const char *prog)
 	printf("  --8svx       write Amiga IFF-8SVX signed 8-bit output (implies mono)\n");
 	printf("  --fibdelta   use 8SVX Fibonacci Delta compression (implies --8svx)\n");
 	printf("  --bench      print elapsed decode/write time and realtime ratio\n");
+	printf("  --debug-argv print argc/argv after Amiga argument normalization\n");
 	printf("\n");
 	printf("default output is raw signed 16-bit big-endian PCM.\n");
 }
@@ -89,9 +216,13 @@ static int ParseOptions(int argc, char **argv, DecodeOptions *opt)
 			opt->compression = SVX_COMP_FIBDELTA;
 		} else if (!strcmp(argv[i], "--bench")) {
 			opt->bench = 1;
+		} else if (!strcmp(argv[i], "--debug-argv")) {
+			opt->debugArgv = 1;
 		} else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
 			opt->help = 1;
 			return 0;
+		} else if (argv[i][0] == '-') {
+			return -1;
 		} else if (!opt->inName) {
 			opt->inName = argv[i];
 		} else if (!opt->outName) {
@@ -372,13 +503,37 @@ int main(int argc, char **argv)
 	int svxOpen;
 	clock_t startClock;
 	clock_t endClock;
+	NormalizedArgs normalized;
+	int debugArgv;
+
+	if (AmigaNormalizeArgs(argc, argv, &normalized) != 0) {
+		fprintf(stderr, "cannot normalize command arguments\n");
+		return 1;
+	}
+	argc = normalized.argc;
+	argv = normalized.argv;
+
+	debugArgv = 0;
+	{
+		int i;
+		for (i = 1; i < argc; i++) {
+			if (!strcmp(argv[i], "--debug-argv")) {
+				debugArgv = 1;
+				break;
+			}
+		}
+	}
+	if (debugArgv)
+		PrintArgvDebug(argc, argv);
 
 	if (ParseOptions(argc, argv, &opt) != 0) {
-		PrintUsage(argv[0]);
+		PrintUsage(argv && argv[0] ? argv[0] : "amiga_mp3dec");
+		AmigaFreeNormalizedArgs(&normalized);
 		return 1;
 	}
 	if (opt.help) {
-		PrintUsage(argv[0]);
+		PrintUsage(argv && argv[0] ? argv[0] : "amiga_mp3dec");
+		AmigaFreeNormalizedArgs(&normalized);
 		return 0;
 	}
 
@@ -388,6 +543,7 @@ int main(int argc, char **argv)
 	infile = fopen(opt.inName, "rb");
 	if (!infile) {
 		fprintf(stderr, "cannot open input: %s\n", opt.inName);
+		AmigaFreeNormalizedArgs(&normalized);
 		return 1;
 	}
 
@@ -395,6 +551,7 @@ int main(int argc, char **argv)
 	if (!outfile) {
 		fprintf(stderr, "cannot open output: %s\n", opt.outName);
 		fclose(infile);
+		AmigaFreeNormalizedArgs(&normalized);
 		return 1;
 	}
 
@@ -403,6 +560,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "MP3InitDecoder failed\n");
 		fclose(infile);
 		fclose(outfile);
+		AmigaFreeNormalizedArgs(&normalized);
 		return 1;
 	}
 
@@ -518,6 +676,7 @@ int main(int argc, char **argv)
 	MP3FreeDecoder(decoder);
 	fclose(infile);
 	fclose(outfile);
+	AmigaFreeNormalizedArgs(&normalized);
 
 	return 0;
 }
