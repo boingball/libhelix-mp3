@@ -9,7 +9,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifndef AMIGA_M68K
 #include <signal.h>
+#endif
 
 #if defined(AMIGA_M68K) && (defined(__amigaos__) || defined(__AMIGA__) || defined(__MORPHOS__))
 #define HAVE_AMIGA_AUDIO_DEVICE 1
@@ -1705,6 +1707,10 @@ static int DecodeStreamFillS8(DecodeStream *stream, const DecodeOptions *opt,
 	return produced;
 }
 
+#ifdef AMIGA_M68K
+/* Ctrl-C signal handling is unavailable in the libnix build for now. */
+static volatile int gPlaybackInterrupted;
+#else
 static volatile sig_atomic_t gPlaybackInterrupted;
 
 static void PlaybackSignalHandler(int signum)
@@ -1712,6 +1718,7 @@ static void PlaybackSignalHandler(int signum)
 	(void)signum;
 	gPlaybackInterrupted = 1;
 }
+#endif
 
 typedef struct PlaybackCleanupStatus {
 	unsigned long ioCompleted;
@@ -2760,9 +2767,13 @@ int main(int argc, char **argv)
 	if (opt.playLifecycleTest) {
 		int playTestErr;
 		gPlaybackInterrupted = 0;
+#ifndef AMIGA_M68K
 		signal(SIGINT, PlaybackSignalHandler);
+#endif
 		playTestErr = AmigaPlayLifecycleTest(&opt);
+#ifndef AMIGA_M68K
 		signal(SIGINT, SIG_DFL);
+#endif
 		AmigaFreeNormalizedArgs(&normalized);
 		return playTestErr == 0 ? 0 : 1;
 	}
@@ -2840,7 +2851,9 @@ int main(int argc, char **argv)
 		TimingStats *playTiming;
 		playTiming = opt.bench ? &timing : NULL;
 		gPlaybackInterrupted = 0;
+#ifndef AMIGA_M68K
 		signal(SIGINT, PlaybackSignalHandler);
+#endif
 		gTiming = playTiming;
 		MP3SetDecodeCoreProfileEnabled(opt.bench);
 		if (opt.bench) {
@@ -2898,7 +2911,9 @@ int main(int argc, char **argv)
 			printf("timing frame decode: %.3f s\n", ClocksToSeconds(timing.frameDecode));
 			printf("timing PCM conversion: %.3f s\n", ClocksToSeconds(timing.pcmConvert));
 		}
+#ifndef AMIGA_M68K
 		signal(SIGINT, SIG_DFL);
+#endif
 		MP3FreeDecoder(decoder);
 		fclose(infile);
 		gTiming = NULL;
