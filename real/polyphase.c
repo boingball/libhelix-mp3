@@ -646,142 +646,55 @@ static __inline void PolyphaseStereoFastSample(short *pcm, int sample, int *vbuf
 
 
 /*
- * Fixed-stride mono emitters keep the selected sample order identical to the
- * generic phase walk, but make each one-sided convolution explicit.  This
- * avoids the sample-list loop and the per-sample 0/16/low/high dispatch in the
- * hottest mono fast-lowrate modes.
+ * Compact fixed-stride mono kernels for the two 44100 Hz low-rate modes.
+ * Keep the eight-tap convolution as a loop so the 68030 instruction cache is
+ * not filled by a separate unrolled call sequence for every phase.  Only the
+ * requested side of a paired sample is accumulated.
  */
-#define MONO_EMIT_SAMPLE_0() \
-	(*out++ = PolyphaseMonoFastSample0(vbuf, coefBase))
-#define MONO_EMIT_SAMPLE_16() \
-	(*out++ = PolyphaseMonoFastSample16(vbuf, coefBase))
-#define MONO_EMIT_LO(pair_) \
-	(*out++ = PolyphaseMonoFastSampleLo((pair_), vbuf, coefBase))
-#define MONO_EMIT_HI(pair_) \
-	(*out++ = PolyphaseMonoFastSampleHi((pair_), vbuf, coefBase))
-
-static int PolyphaseMonoFastLowrateStride4(short *pcm, int *vbuf,
-	const int *coefBase, int phase)
+static short PolyphaseMonoFastCompactSample(int sample, int *vbuf,
+	const int *coefBase)
 {
-	short *out;
+	const int *coef;
+	const int *vLo;
+	const int *vHi;
+	int pair;
+	int sum;
+	int tap;
 
-	out = pcm;
-	switch (phase) {
-	case 0:
-		MONO_EMIT_SAMPLE_0();
-		MONO_EMIT_LO(4);
-		MONO_EMIT_LO(8);
-		MONO_EMIT_LO(12);
-		MONO_EMIT_SAMPLE_16();
-		MONO_EMIT_HI(12);
-		MONO_EMIT_HI(8);
-		MONO_EMIT_HI(4);
-		break;
-	case 1:
-		MONO_EMIT_LO(3);
-		MONO_EMIT_LO(7);
-		MONO_EMIT_LO(11);
-		MONO_EMIT_LO(15);
-		MONO_EMIT_HI(13);
-		MONO_EMIT_HI(9);
-		MONO_EMIT_HI(5);
-		MONO_EMIT_HI(1);
-		break;
-	case 2:
-		MONO_EMIT_LO(2);
-		MONO_EMIT_LO(6);
-		MONO_EMIT_LO(10);
-		MONO_EMIT_LO(14);
-		MONO_EMIT_HI(14);
-		MONO_EMIT_HI(10);
-		MONO_EMIT_HI(6);
-		MONO_EMIT_HI(2);
-		break;
-	default:
-		MONO_EMIT_LO(1);
-		MONO_EMIT_LO(5);
-		MONO_EMIT_LO(9);
-		MONO_EMIT_LO(13);
-		MONO_EMIT_HI(15);
-		MONO_EMIT_HI(11);
-		MONO_EMIT_HI(7);
-		MONO_EMIT_HI(3);
-		break;
+	sum = 0;
+	if (sample == 0) {
+		coef = coefBase;
+		vLo = vbuf;
+		vHi = vbuf + 23;
+		for (tap = 0; tap < 8; tap++) {
+			sum += PolyphaseMulShift26(*vLo++, *coef++);
+			sum -= PolyphaseMulShift26(*vHi--, *coef++);
+		}
+	} else if (sample == 16) {
+		coef = coefBase + 256;
+		vLo = vbuf + 64 * 16;
+		for (tap = 0; tap < 8; tap++)
+			sum += PolyphaseMulShift26(*vLo++, *coef++);
+	} else {
+		pair = sample < 16 ? sample : 32 - sample;
+		coef = coefBase + 16 * pair;
+		vLo = vbuf + 64 * pair;
+		vHi = vLo + 23;
+		if (sample < 16) {
+			for (tap = 0; tap < 8; tap++) {
+				sum += PolyphaseMulShift26(*vLo++, coef[0]) -
+					PolyphaseMulShift26(*vHi--, coef[1]);
+				coef += 2;
+			}
+		} else {
+			for (tap = 0; tap < 8; tap++) {
+				sum += PolyphaseMulShift26(*vLo++, coef[1]) +
+					PolyphaseMulShift26(*vHi--, coef[0]);
+				coef += 2;
+			}
+		}
 	}
-	return 8;
-}
-
-static int PolyphaseMonoFastLowrateStride5(short *pcm, int *vbuf,
-	const int *coefBase, int phase)
-{
-	short *out;
-
-	out = pcm;
-	switch (phase) {
-	case 0:
-		MONO_EMIT_SAMPLE_0();
-		MONO_EMIT_LO(5);
-		MONO_EMIT_LO(10);
-		MONO_EMIT_LO(15);
-		MONO_EMIT_HI(12);
-		MONO_EMIT_HI(7);
-		MONO_EMIT_HI(2);
-		return 7;
-	case 1:
-		MONO_EMIT_LO(4);
-		MONO_EMIT_LO(9);
-		MONO_EMIT_LO(14);
-		MONO_EMIT_HI(13);
-		MONO_EMIT_HI(8);
-		MONO_EMIT_HI(3);
-		return 6;
-	case 2:
-		MONO_EMIT_LO(3);
-		MONO_EMIT_LO(8);
-		MONO_EMIT_LO(13);
-		MONO_EMIT_HI(14);
-		MONO_EMIT_HI(9);
-		MONO_EMIT_HI(4);
-		return 6;
-	case 3:
-		MONO_EMIT_LO(2);
-		MONO_EMIT_LO(7);
-		MONO_EMIT_LO(12);
-		MONO_EMIT_HI(15);
-		MONO_EMIT_HI(10);
-		MONO_EMIT_HI(5);
-		return 6;
-	default:
-		MONO_EMIT_LO(1);
-		MONO_EMIT_LO(6);
-		MONO_EMIT_LO(11);
-		MONO_EMIT_SAMPLE_16();
-		MONO_EMIT_HI(11);
-		MONO_EMIT_HI(6);
-		MONO_EMIT_HI(1);
-		return 7;
-	}
-}
-
-#undef MONO_EMIT_SAMPLE_0
-#undef MONO_EMIT_SAMPLE_16
-#undef MONO_EMIT_LO
-#undef MONO_EMIT_HI
-
-static int PolyphaseStereoFastLowrateList(short *pcm, int *vbuf, const int *coefBase, const unsigned char *samples, int count)
-{
-	short *out;
-	const unsigned char *samplePtr;
-	int remaining;
-
-	out = pcm;
-	samplePtr = samples;
-	remaining = count;
-	while (remaining-- > 0) {
-		PolyphaseStereoFastSample(out, *samplePtr++, vbuf, coefBase);
-		out += 2;
-	}
-	return count * 2;
+	return ClipIntToShort(sum);
 }
 
 static const unsigned char fastLowrateStride4Samples[4][8] = {
@@ -800,6 +713,47 @@ static const unsigned char fastLowrateStride5Samples[5][7] = {
 };
 
 static const unsigned char fastLowrateStride5Count[5] = { 7, 6, 6, 6, 7 };
+
+static int PolyphaseMonoFastLowrateCompact(short *pcm, int *vbuf,
+	const int *coefBase, const unsigned char *samples, int count)
+{
+	int remaining;
+
+	remaining = count;
+	while (remaining-- > 0)
+		*pcm++ = PolyphaseMonoFastCompactSample(*samples++, vbuf, coefBase);
+	return count;
+}
+
+static int PolyphaseMonoFastLowrateStride4(short *pcm, int *vbuf,
+	const int *coefBase, int phase)
+{
+	return PolyphaseMonoFastLowrateCompact(pcm, vbuf, coefBase,
+		fastLowrateStride4Samples[phase], 8);
+}
+
+static int PolyphaseMonoFastLowrateStride5(short *pcm, int *vbuf,
+	const int *coefBase, int phase)
+{
+	return PolyphaseMonoFastLowrateCompact(pcm, vbuf, coefBase,
+		fastLowrateStride5Samples[phase], fastLowrateStride5Count[phase]);
+}
+
+static int PolyphaseStereoFastLowrateList(short *pcm, int *vbuf, const int *coefBase, const unsigned char *samples, int count)
+{
+	short *out;
+	const unsigned char *samplePtr;
+	int remaining;
+
+	out = pcm;
+	samplePtr = samples;
+	remaining = count;
+	while (remaining-- > 0) {
+		PolyphaseStereoFastSample(out, *samplePtr++, vbuf, coefBase);
+		out += 2;
+	}
+	return count * 2;
+}
 
 #endif /* AMIGA_M68K && AMIGA_FAST_POLYPHASE */
 
