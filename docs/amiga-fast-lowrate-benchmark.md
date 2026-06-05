@@ -76,6 +76,33 @@ For every fixture, compare the before/after PCM checksum and emitted sample
 count before accepting the timing result.  Also checksum a full-rate decode and
 a normal `--rate 11025` decode to confirm those unaffected paths remain exact.
 
+### Compact-kernel follow-up
+
+The fixed-stride mono emitters now share a compact eight-tap one-sided kernel
+and phase/sample tables instead of using a switch containing an explicit call
+for every emitted sample.  Stride 4 and stride 5 still have dedicated entry
+points, calculate only selected samples, and preserve the multiply and
+accumulator order for each selected low/high side.  This reduces the profiled
+host executable text by 1,080 bytes and keeps the hot kernel small for the
+68030 instruction cache.  Stereo fast-lowrate, full-rate synthesis, generic
+fast-lowrate strides, and normal `--rate` remain on their existing paths.
+
+The workspace has no m68k compiler/runtime and no mono MP3 fixture.  A repeated
+44.1 kHz stereo fixture was therefore used only as a host-side checksum and
+before/after timing smoke test for stereo-input-to-mono; final performance must
+still be measured with both required fixtures on the target:
+
+| Host fixture/mode | Before | Compact kernel | Checksum before/after |
+| --- | ---: | ---: | --- |
+| stereo input to mono, stride 4 | 1.715 s overall; 0.285 s polyphase | 1.697 s overall; 0.303 s polyphase | `53525b40` / `53525b40` |
+| stereo input to mono, stride 5 | 1.734 s overall; 0.288 s polyphase | 1.678 s overall; 0.293 s polyphase | `d1a2a245` / `d1a2a245` |
+
+Host timing is not predictive of 68030 performance.  The available short
+fixture also confirmed unchanged checksums for full-rate mono output
+(`70db07b7`) and the existing normal `--rate 11025` path (`70db07b7`).  A
+10,000-block-per-stride randomized comparison against the pre-change kernels
+produced the same aggregate checksum, `1e2da26d`.
+
 ## Before profile supplied for this pass
 
 Build/profile: `AMIGA_PROFILE_DECODE + AMIGA_FAST_POLYPHASE + --fast-lowrate --rate 11025`.
