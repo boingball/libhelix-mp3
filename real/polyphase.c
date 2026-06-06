@@ -62,6 +62,41 @@
 #define POLYPHASE_REF_UNUSED
 #endif
 
+#if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE)
+static int gExperimentalPolyphaseEnabled;
+
+void MP3SetExperimentalPolyphase(int enabled)
+{
+	gExperimentalPolyphaseEnabled = enabled ? 1 : 0;
+}
+
+int MP3ExperimentalPolyphaseEnabled(void)
+{
+	return gExperimentalPolyphaseEnabled;
+}
+#else
+void MP3SetExperimentalPolyphase(int enabled)
+{
+	(void)enabled;
+}
+
+int MP3ExperimentalPolyphaseEnabled(void)
+{
+	return 0;
+}
+#endif
+
+#if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE) && defined(AMIGA_M68K_ASM_POLYPHASE)
+/*
+ * Keep this a weak reference so command lines that define
+ * AMIGA_M68K_ASM_POLYPHASE but still use real/*.c without the optional .S file
+ * link cleanly and fall back to the existing C fast path.
+ */
+extern void AmigaM68KPolyphaseMonoFast(short *pcm, int *vbuf,
+	const int *coefBase) __asm__("AmigaM68KPolyphaseMonoFast")
+	__attribute__((weak));
+#endif
+
 static __inline short ClipToShort(int x, int fracBits)
 {
 	int sign;
@@ -967,7 +1002,13 @@ int PolyphaseStereoFastLowrate(short *pcm, int *vbuf, const int *coefBase, int s
 
 void PolyphaseMono(short *pcm, int *vbuf, const int *coefBase)
 {
-#if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE)
+#if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE) && defined(AMIGA_M68K_ASM_POLYPHASE)
+	if (MP3ExperimentalPolyphaseEnabled() && AmigaM68KPolyphaseMonoFast) {
+		AmigaM68KPolyphaseMonoFast(pcm, vbuf, coefBase);
+		return;
+	}
+	PolyphaseMonoFast(pcm, vbuf, coefBase);
+#elif defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE)
 	PolyphaseMonoFast(pcm, vbuf, coefBase);
 #else
 	PolyphaseMonoReference(pcm, vbuf, coefBase);
