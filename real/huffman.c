@@ -91,9 +91,10 @@ static __inline unsigned int HuffmanBFExtUPadded(const unsigned char *buf, int b
 	unsigned int bits;
 	int padBits;
 
-	bits = HuffmanBFExtU(buf, bitPos, nBits);
 	if (validBits <= 0)
 		return 0;
+
+	bits = HuffmanBFExtU(buf, bitPos, nBits);
 	if (validBits < nBits) {
 		/*
 		 * bfextu returns the maxBits-wide field right-justified with the
@@ -401,16 +402,12 @@ static int DecodeHuffmanPairs_BFEXTU(int *xy, int nVals, int tabIdx, int bitsLef
 	while (nVals > 0) {
 		tCurr = tBase;
 		for (;;) {
-			if (remaining <= 0)
-				return -1;
 			maxBits = GetMaxbits(tCurr[0]);
 			validBits = (remaining < maxBits) ? remaining : maxBits;
 			bits = HuffmanBFExtUPadded(buf, bitPos, maxBits, validBits);
 			cw = tCurr[bits + 1];
 			len = GetHLen(cw);
 			if (!len) {
-				if (remaining < maxBits)
-					return -1;
 				bitPos += maxBits;
 				remaining -= maxBits;
 				tCurr += cw;
