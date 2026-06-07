@@ -455,20 +455,22 @@ static int DecodeHuffmanPairs_BFEXTU(int *xy, int nVals, int tabIdx, int bitsLef
 
 		x = GetCWX(cw);
 		if (x) {
-			validBits = (remaining > 0) ? 1 : 0;
-			if (validBits && HuffmanBFExtUPadded(buf, bitPos, 1, validBits))
-				x |= (int)0x80000000;
-			bitPos++;
-			remaining--;
+			if (remaining > 0) {
+				if (HuffmanBFExtU(buf, bitPos, 1))
+					x |= (int)0x80000000;
+				bitPos++;
+				remaining--;
+			}
 		}
 
 		y = GetCWY(cw);
 		if (y) {
-			validBits = (remaining > 0) ? 1 : 0;
-			if (validBits && HuffmanBFExtUPadded(buf, bitPos, 1, validBits))
-				y |= (int)0x80000000;
-			bitPos++;
-			remaining--;
+			if (remaining > 0) {
+				if (HuffmanBFExtU(buf, bitPos, 1))
+					y |= (int)0x80000000;
+				bitPos++;
+				remaining--;
+			}
 		}
 
 		*xy++ = x;
@@ -479,6 +481,8 @@ static int DecodeHuffmanPairs_BFEXTU(int *xy, int nVals, int tabIdx, int bitsLef
 done:
 	if (remaining < -11)
 		return -1;
+	if (remaining < 0)
+		remaining = 0;
 	return (startBits - remaining);
 }
 #endif
