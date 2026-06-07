@@ -419,14 +419,11 @@ int DecodeHuffmanPairs_C_REFERENCE(int *xy, int nVals, int tabIdx, int bitsLeft,
 static int DecodeHuffmanPairs_BFEXTU(int *xy, int nVals, int tabIdx, int bitsLeft, unsigned char *buf, int bitOffset)
 {
 	int x, y;
-	int cachedBits, padBits, len, startBits, maxBits, validBits, realBits;
-	int bitPos;
+	int len, startBits, linBits, maxBits;
+	int bitPos, remaining;
 	HuffTabType tabType;
 	unsigned short cw, *tBase, *tCurr;
 	unsigned int bits;
-	int gHuffmanTrace;
-
-	gHuffmanTrace = (nVals == 318 && bitsLeft == 665 && bitOffset == 6 && tabIdx == 9) ? 2 : 0;
 
 	if(nVals <= 0)
 		return 0;
@@ -436,6 +433,7 @@ static int DecodeHuffmanPairs_BFEXTU(int *xy, int nVals, int tabIdx, int bitsLef
 	startBits = bitsLeft;
 
 	tBase = (unsigned short *)(huffTable + huffTabOffset[tabIdx]);
+	linBits = huffTabLookup[tabIdx].linBits;
 	tabType = huffTabLookup[tabIdx].tabType;
 
 	ASSERT(!(nVals & 0x01));
@@ -443,86 +441,76 @@ static int DecodeHuffmanPairs_BFEXTU(int *xy, int nVals, int tabIdx, int bitsLef
 	ASSERT(tabIdx >= 0);
 	ASSERT(tabType != invalidTab);
 
-	if (tabType != loopNoLinbits)
+	if (tabType != loopLinbits)
 		return DecodeHuffmanPairs_C_REFERENCE(xy, nVals, tabIdx, bitsLeft, buf, bitOffset);
 
-	/*
-	 * Keep the C reference loopNoLinbits startBits/bitsLeft/cachedBits/padBits
-	 * accounting, but read the Huffman and sign bits directly from the original
-	 * buffer with bfextu at bitPos rather than from the left-justified cache.
-	 * bitPos is the sole tracker of the next unread bit, so do not pre-drain
-	 * byte-alignment bits into cachedBits here.
-	 */
 	bitPos = bitOffset;
-	cachedBits = 0;
-
-	/* no-linbits decode loop, mirrored from DecodeHuffmanPairs_C_REFERENCE */
-	tCurr = tBase;
-	padBits = 0;
+	remaining = bitsLeft;
 	while (nVals > 0) {
-		/* refill cache - assumes cachedBits <= 16 */
-		if (bitsLeft >= 16) {
-			cachedBits += 16;
-			bitsLeft -= 16;
-		} else {
-			if (gHuffmanTrace)
-				printf("T%d END-DRAIN entry: nVals=%d bitsLeft=%d cachedBits=%d padBits=%d bitPos=%d\n",
-					gHuffmanTrace, nVals, bitsLeft, cachedBits, padBits, bitPos);
-			if (cachedBits + bitsLeft <= 0)	return -1;
-			cachedBits += bitsLeft;
-			bitsLeft = 0;
-
-			padBits = 11;
-			cachedBits += padBits;
-		}
-
-		while (nVals > 0 && cachedBits >= 11) {
+		tCurr = tBase;
+		for (;;) {
+			if (remaining <= 0)
+				return -1;
 			maxBits = GetMaxbits(tCurr[0]);
-			realBits = bitsLeft + (cachedBits - padBits);
-			validBits = (realBits < maxBits) ? realBits : maxBits;
-			bits = HuffmanBFExtUPadded(buf, bitPos, maxBits, validBits);
+			bits = HuffmanBFExtUPadded(buf, bitPos, maxBits, remaining);
 			cw = tCurr[bits + 1];
 			len = GetHLen(cw);
 			if (!len) {
-				cachedBits -= maxBits;
+				if (remaining < maxBits)
+					return -1;
 				bitPos += maxBits;
+				remaining -= maxBits;
 				tCurr += cw;
 				continue;
 			}
-			cachedBits -= len;
-			bitPos += len;
-
-			x = GetCWX(cw);
-			if (x) {
-				realBits = bitsLeft + (cachedBits - padBits);
-				if (realBits > 0 && HuffmanBFExtU(buf, bitPos, 1))
-					x |= (int)0x80000000;
-				bitPos++;
-				cachedBits--;
-			}
-			y = GetCWY(cw);
-			if (y) {
-				realBits = bitsLeft + (cachedBits - padBits);
-				if (realBits > 0 && HuffmanBFExtU(buf, bitPos, 1))
-					y |= (int)0x80000000;
-				bitPos++;
-				cachedBits--;
-			}
-
-			if (cachedBits < padBits)
+			if (remaining < len)
 				return -1;
-
-			*xy++ = x;
-			*xy++ = y;
-			nVals -= 2;
-			tCurr = tBase;
+			bitPos += len;
+			remaining -= len;
+			break;
 		}
+
+		x = GetCWX(cw);
+		y = GetCWY(cw);
+
+		if (x == 15) {
+			if (remaining < linBits)
+				return -1;
+			x += (int)HuffmanBFExtU(buf, bitPos, linBits);
+			bitPos += linBits;
+			remaining -= linBits;
+		}
+		if (x) {
+			if (remaining < 1)
+				return -1;
+			if (HuffmanBFExtU(buf, bitPos, 1))
+				x |= (int)0x80000000;
+			bitPos++;
+			remaining--;
+		}
+
+		if (y == 15) {
+			if (remaining < linBits)
+				return -1;
+			y += (int)HuffmanBFExtU(buf, bitPos, linBits);
+			bitPos += linBits;
+			remaining -= linBits;
+		}
+		if (y) {
+			if (remaining < 1)
+				return -1;
+			if (HuffmanBFExtU(buf, bitPos, 1))
+				y |= (int)0x80000000;
+			bitPos++;
+			remaining--;
+		}
+
+		*xy++ = x;
+		*xy++ = y;
+		nVals -= 2;
 	}
-	bitsLeft += (cachedBits - padBits);
-	if (gHuffmanTrace)
-		printf("T%d RETURN: startBits=%d bitsLeft=%d result=%d\n",
-			gHuffmanTrace, startBits, bitsLeft, startBits - bitsLeft);
-	return (startBits - bitsLeft);
+
+	return (startBits - remaining);
 }
 #endif
 
