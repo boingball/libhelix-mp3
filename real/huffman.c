@@ -397,7 +397,7 @@ int DecodeHuffmanPairs_C_REFERENCE(int *xy, int nVals, int tabIdx, int bitsLeft,
 static int DecodeHuffmanPairs_BFEXTU(int *xy, int nVals, int tabIdx, int bitsLeft, unsigned char *buf, int bitOffset)
 {
 	int x, y;
-	int cachedBits, padBits, len, startBits, maxBits, validBits;
+	int cachedBits, padBits, len, startBits, maxBits, validBits, realBits;
 	int bitPos;
 	HuffTabType tabType;
 	unsigned short cw, *tBase, *tCurr;
@@ -459,9 +459,8 @@ static int DecodeHuffmanPairs_BFEXTU(int *xy, int nVals, int tabIdx, int bitsLef
 
 		while (nVals > 0 && cachedBits >= 11) {
 			maxBits = GetMaxbits(tCurr[0]);
-			validBits = cachedBits - padBits;
-			if (validBits > maxBits)
-				validBits = maxBits;
+			realBits = bitsLeft + (cachedBits - padBits);
+			validBits = (realBits < maxBits) ? realBits : maxBits;
 			bits = HuffmanBFExtUPadded(buf, bitPos, maxBits, validBits);
 			cw = tCurr[bits + 1];
 			len = GetHLen(cw);
@@ -474,8 +473,22 @@ static int DecodeHuffmanPairs_BFEXTU(int *xy, int nVals, int tabIdx, int bitsLef
 			cachedBits -= len;
 			bitPos += len;
 
-			x = GetCWX(cw);		if (x)	{if (HuffmanBFExtU(buf, bitPos, 1)) x = -x; bitPos++; cachedBits--;}
-			y = GetCWY(cw);		if (y)	{if (HuffmanBFExtU(buf, bitPos, 1)) y = -y; bitPos++; cachedBits--;}
+			x = GetCWX(cw);
+			if (x) {
+				realBits = bitsLeft + (cachedBits - padBits);
+				if (realBits > 0 && HuffmanBFExtU(buf, bitPos, 1))
+					x |= (int)0x80000000;
+				bitPos++;
+				cachedBits--;
+			}
+			y = GetCWY(cw);
+			if (y) {
+				realBits = bitsLeft + (cachedBits - padBits);
+				if (realBits > 0 && HuffmanBFExtU(buf, bitPos, 1))
+					y |= (int)0x80000000;
+				bitPos++;
+				cachedBits--;
+			}
 
 			if (cachedBits < padBits)
 				return -1;
