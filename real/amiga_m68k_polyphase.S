@@ -11,6 +11,10 @@
 	.globl	AmigaM68KPolyphaseMonoFast
 	.globl	AmigaM68KPolyphaseMonoFastStride2
 	.globl	MonoFastPolyphaseStride4_Amiga_m68k
+	.globl	StereoFastPolyphaseStride4Phase0_Amiga_m68k
+	.globl	StereoFastPolyphaseStride4Phase1_Amiga_m68k
+	.globl	StereoFastPolyphaseStride4Phase2_Amiga_m68k
+	.globl	StereoFastPolyphaseStride4Phase3_Amiga_m68k
 /* void AmigaM68KPolyphaseMonoFast(short *pcm, int *vbuf, const int *coefBase)
  * 4(%sp)  = pcm
  * 8(%sp)  = vbuf
@@ -271,6 +275,216 @@ MonoFastPolyphaseStride4_Amiga_m68k:
 	PAIR_HI 12,10
 	PAIR_HI 8,12
 	PAIR_HI 4,14
+
+	movem.l	(%sp)+,%d2-%d7/%a2-%a6
+	rts
+
+
+/* Stereo stride-4 polyphase functions
+ * Each outputs 8 stereo pairs (16 shorts LRLRLR...) into pcm.
+ * Register layout:
+ *   %a0 = pcm
+ *   %a1 = vbuf (L base)
+ *   %a2 = coefBase
+ *   %d3 = L accumulator
+ *   %d5 = R accumulator
+ *   %d0, %d1, %d2 = scratch
+ * R channel at %a1 + 2048 (512 ints * 4 bytes).
+ */
+
+.macro STEREO_PROD_ADD voff, coff, lacc, racc
+	move.l	\voff(%a1),%d0
+	move.l	\coff(%a2),%d1
+	asl.l	#6,%d1
+	muls.l	%d1,%d2:%d0
+	add.l	%d2,\lacc
+	move.l	\voff+2048(%a1),%d0
+	muls.l	%d1,%d2:%d0
+	add.l	%d2,\racc
+.endm
+
+.macro STEREO_PROD_SUB voff, coff, lacc, racc
+	move.l	\voff(%a1),%d0
+	move.l	\coff(%a2),%d1
+	asl.l	#6,%d1
+	muls.l	%d1,%d2:%d0
+	sub.l	%d2,\lacc
+	move.l	\voff+2048(%a1),%d0
+	muls.l	%d1,%d2:%d0
+	sub.l	%d2,\racc
+.endm
+
+.macro STEREO_SAMPLE0 poff
+	clr.l	%d3
+	clr.l	%d5
+	STEREO_PROD_ADD 0,0,%d3,%d5
+	STEREO_PROD_SUB 92,4,%d3,%d5
+	STEREO_PROD_ADD 4,8,%d3,%d5
+	STEREO_PROD_SUB 88,12,%d3,%d5
+	STEREO_PROD_ADD 8,16,%d3,%d5
+	STEREO_PROD_SUB 84,20,%d3,%d5
+	STEREO_PROD_ADD 12,24,%d3,%d5
+	STEREO_PROD_SUB 80,28,%d3,%d5
+	STEREO_PROD_ADD 16,32,%d3,%d5
+	STEREO_PROD_SUB 76,36,%d3,%d5
+	STEREO_PROD_ADD 20,40,%d3,%d5
+	STEREO_PROD_SUB 72,44,%d3,%d5
+	STEREO_PROD_ADD 24,48,%d3,%d5
+	STEREO_PROD_SUB 68,52,%d3,%d5
+	STEREO_PROD_ADD 28,56,%d3,%d5
+	STEREO_PROD_SUB 64,60,%d3,%d5
+	CLIP_STORE %d3,\poff
+	CLIP_STORE %d5,\poff+2
+.endm
+
+.macro STEREO_SAMPLE16 poff
+	clr.l	%d3
+	clr.l	%d5
+	STEREO_PROD_ADD 4096,1024,%d3,%d5
+	STEREO_PROD_ADD 4100,1028,%d3,%d5
+	STEREO_PROD_ADD 4104,1032,%d3,%d5
+	STEREO_PROD_ADD 4108,1036,%d3,%d5
+	STEREO_PROD_ADD 4112,1040,%d3,%d5
+	STEREO_PROD_ADD 4116,1044,%d3,%d5
+	STEREO_PROD_ADD 4120,1048,%d3,%d5
+	STEREO_PROD_ADD 4124,1052,%d3,%d5
+	CLIP_STORE %d3,\poff
+	CLIP_STORE %d5,\poff+2
+.endm
+
+.macro STEREO_PAIR_LO pair, poff
+	.set VB, (\pair * 256)
+	.set CF, (\pair * 64)
+	clr.l	%d3
+	clr.l	%d5
+	STEREO_PROD_ADD VB+0,CF+0,%d3,%d5
+	STEREO_PROD_SUB VB+92,CF+4,%d3,%d5
+	STEREO_PROD_ADD VB+4,CF+8,%d3,%d5
+	STEREO_PROD_SUB VB+88,CF+12,%d3,%d5
+	STEREO_PROD_ADD VB+8,CF+16,%d3,%d5
+	STEREO_PROD_SUB VB+84,CF+20,%d3,%d5
+	STEREO_PROD_ADD VB+12,CF+24,%d3,%d5
+	STEREO_PROD_SUB VB+80,CF+28,%d3,%d5
+	STEREO_PROD_ADD VB+16,CF+32,%d3,%d5
+	STEREO_PROD_SUB VB+76,CF+36,%d3,%d5
+	STEREO_PROD_ADD VB+20,CF+40,%d3,%d5
+	STEREO_PROD_SUB VB+72,CF+44,%d3,%d5
+	STEREO_PROD_ADD VB+24,CF+48,%d3,%d5
+	STEREO_PROD_SUB VB+68,CF+52,%d3,%d5
+	STEREO_PROD_ADD VB+28,CF+56,%d3,%d5
+	STEREO_PROD_SUB VB+64,CF+60,%d3,%d5
+	CLIP_STORE %d3,\poff
+	CLIP_STORE %d5,\poff+2
+.endm
+
+.macro STEREO_PAIR_HI pair, poff
+	.set VB, (\pair * 256)
+	.set CF, (\pair * 64)
+	clr.l	%d3
+	clr.l	%d5
+	STEREO_PROD_ADD VB+0,CF+4,%d3,%d5
+	STEREO_PROD_ADD VB+92,CF+0,%d3,%d5
+	STEREO_PROD_ADD VB+4,CF+12,%d3,%d5
+	STEREO_PROD_ADD VB+88,CF+8,%d3,%d5
+	STEREO_PROD_ADD VB+8,CF+20,%d3,%d5
+	STEREO_PROD_ADD VB+84,CF+16,%d3,%d5
+	STEREO_PROD_ADD VB+12,CF+28,%d3,%d5
+	STEREO_PROD_ADD VB+80,CF+24,%d3,%d5
+	STEREO_PROD_ADD VB+16,CF+36,%d3,%d5
+	STEREO_PROD_ADD VB+76,CF+32,%d3,%d5
+	STEREO_PROD_ADD VB+20,CF+44,%d3,%d5
+	STEREO_PROD_ADD VB+72,CF+40,%d3,%d5
+	STEREO_PROD_ADD VB+24,CF+52,%d3,%d5
+	STEREO_PROD_ADD VB+68,CF+48,%d3,%d5
+	STEREO_PROD_ADD VB+28,CF+60,%d3,%d5
+	STEREO_PROD_ADD VB+64,CF+56,%d3,%d5
+	CLIP_STORE %d3,\poff
+	CLIP_STORE %d5,\poff+2
+.endm
+
+/* void StereoFastPolyphaseStride4Phase0_Amiga_m68k(short *pcm, int *vbuf, const int *coefBase)
+ * Outputs stride-4 phase-0 samples: 0, 4, 8, 12, 16, 20, 24, 28
+ */
+StereoFastPolyphaseStride4Phase0_Amiga_m68k:
+	movem.l	%d2-%d7/%a2-%a6,-(%sp)
+	move.l	48(%sp),%a0		| pcm
+	move.l	52(%sp),%a1		| vbuf
+	move.l	56(%sp),%a2		| coefBase
+
+	STEREO_SAMPLE0 0
+	STEREO_PAIR_LO 4,4
+	STEREO_PAIR_LO 8,8
+	STEREO_PAIR_LO 12,12
+	STEREO_SAMPLE16 16
+	STEREO_PAIR_HI 12,20
+	STEREO_PAIR_HI 8,24
+	STEREO_PAIR_HI 4,28
+
+	movem.l	(%sp)+,%d2-%d7/%a2-%a6
+	rts
+
+
+/* void StereoFastPolyphaseStride4Phase1_Amiga_m68k(short *pcm, int *vbuf, const int *coefBase)
+ * Outputs stride-4 phase-1 samples: 3, 7, 11, 15, 19, 23, 27, 31
+ */
+StereoFastPolyphaseStride4Phase1_Amiga_m68k:
+	movem.l	%d2-%d7/%a2-%a6,-(%sp)
+	move.l	48(%sp),%a0		| pcm
+	move.l	52(%sp),%a1		| vbuf
+	move.l	56(%sp),%a2		| coefBase
+
+	STEREO_PAIR_LO 3,0
+	STEREO_PAIR_LO 7,4
+	STEREO_PAIR_LO 11,8
+	STEREO_PAIR_LO 15,12
+	STEREO_PAIR_HI 15,16
+	STEREO_PAIR_HI 11,20
+	STEREO_PAIR_HI 7,24
+	STEREO_PAIR_HI 3,28
+
+	movem.l	(%sp)+,%d2-%d7/%a2-%a6
+	rts
+
+
+/* void StereoFastPolyphaseStride4Phase2_Amiga_m68k(short *pcm, int *vbuf, const int *coefBase)
+ * Outputs stride-4 phase-2 samples: 2, 6, 10, 14, 18, 22, 26, 30
+ */
+StereoFastPolyphaseStride4Phase2_Amiga_m68k:
+	movem.l	%d2-%d7/%a2-%a6,-(%sp)
+	move.l	48(%sp),%a0		| pcm
+	move.l	52(%sp),%a1		| vbuf
+	move.l	56(%sp),%a2		| coefBase
+
+	STEREO_PAIR_LO 2,0
+	STEREO_PAIR_LO 6,4
+	STEREO_PAIR_LO 10,8
+	STEREO_PAIR_LO 14,12
+	STEREO_PAIR_HI 14,16
+	STEREO_PAIR_HI 10,20
+	STEREO_PAIR_HI 6,24
+	STEREO_PAIR_HI 2,28
+
+	movem.l	(%sp)+,%d2-%d7/%a2-%a6
+	rts
+
+
+/* void StereoFastPolyphaseStride4Phase3_Amiga_m68k(short *pcm, int *vbuf, const int *coefBase)
+ * Outputs stride-4 phase-3 samples: 1, 5, 9, 13, 17, 21, 25, 29
+ */
+StereoFastPolyphaseStride4Phase3_Amiga_m68k:
+	movem.l	%d2-%d7/%a2-%a6,-(%sp)
+	move.l	48(%sp),%a0		| pcm
+	move.l	52(%sp),%a1		| vbuf
+	move.l	56(%sp),%a2		| coefBase
+
+	STEREO_PAIR_LO 1,0
+	STEREO_PAIR_LO 5,4
+	STEREO_PAIR_LO 9,8
+	STEREO_PAIR_LO 13,12
+	STEREO_PAIR_HI 13,16
+	STEREO_PAIR_HI 9,20
+	STEREO_PAIR_HI 5,24
+	STEREO_PAIR_HI 1,28
 
 	movem.l	(%sp)+,%d2-%d7/%a2-%a6
 	rts
