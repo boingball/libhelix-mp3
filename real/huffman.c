@@ -168,9 +168,12 @@ int DecodeHuffmanPairs_C_REFERENCE(int *xy, int nVals, int tabIdx, int bitsLeft,
 				x = GetCWX(cw);		if (x)	{ApplySign(x, cache); cache <<= 1; cachedBits--;}
 				y = GetCWY(cw);		if (y)	{ApplySign(y, cache); cache <<= 1; cachedBits--;}
 
-				/* ran out of bits - should never have consumed padBits */
+				/* ran out of real bits - clamp to padded zero bits rather than
+				 * reporting a bad Huffman stream. Some valid encoders leave the
+				 * final big_values codeword ending in the zero-padded tail.
+				 */
 				if (cachedBits < padBits)
-					return -1;
+					cachedBits = padBits;
 
 				*xy++ = x;
 				*xy++ = y;
@@ -228,8 +231,11 @@ int DecodeHuffmanPairs_C_REFERENCE(int *xy, int nVals, int tabIdx, int bitsLeft,
 				x = GetCWX(cw);		if (x)	{ApplySign(x, cache); cache <<= 1; cachedBits--;}
 				y = GetCWY(cw);		if (y)	{ApplySign(y, cache); cache <<= 1; cachedBits--;}
 
+				/* See oneShot case: do not turn a zero-padded tail into
+				 * ERR_MP3_INVALID_HUFFCODES.
+				 */
 				if (cachedBits < padBits)
-					return -1;
+					cachedBits = padBits;
 
 				*xy++ = x;
 				*xy++ = y;
@@ -326,9 +332,12 @@ int DecodeHuffmanPairs_C_REFERENCE(int *xy, int nVals, int tabIdx, int bitsLeft,
 				}
 				if (y)	{ApplySign(y, cache); cache <<= 1; cachedBits--;}
 
-				/* ran out of bits - should never have consumed padBits */
+				/* ran out of real bits - clamp to padded zero bits rather than
+				 * reporting a bad Huffman stream. Some valid encoders leave the
+				 * final big_values codeword ending in the zero-padded tail.
+				 */
 				if (cachedBits < padBits)
-					return -1;
+					cachedBits = padBits;
 
 				*xy++ = x;
 				*xy++ = y;
