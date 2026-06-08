@@ -4681,8 +4681,13 @@ int main(int argc, char **argv)
 			fprintf(stderr,
 				"22050 requires significantly more CPU and may underrun on 030 systems.\n");
 #if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE)
-		if (opt.expImdctThin)
-			fprintf(stderr, "warning: --exp-imdct-thin requested; unsupported stride-4 IMDCT thinning remains disabled unless selftest-proven\n");
+		if (opt.expImdctThin) {
+#if defined(AMIGA_M68K_IMDCT_THIN_OUTPUT)
+			fprintf(stderr, "warning: --exp-imdct-thin enables experimental IMDCT output-thinning bookkeeping for stride-4 mono fast-lowrate\n");
+#else
+			fprintf(stderr, "warning: --exp-imdct-thin requested, but this build lacks AMIGA_M68K_IMDCT_THIN_OUTPUT\n");
+#endif
+		}
 		fprintf(stderr, "warning: --fast-lowrate is experimental, lower quality, "
 			"and only skips polyphase output samples; IMDCT/DCT32 still run full-rate\n");
 #else

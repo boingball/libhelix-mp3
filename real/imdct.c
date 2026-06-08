@@ -295,17 +295,15 @@ static int IMDCTThinOutputCanActivate(const MP3DecInfo *mp3DecInfo)
 {
 #if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE) && defined(AMIGA_M68K_IMDCT_THIN_OUTPUT)
 	/*
-	 * The runtime option is intentionally more conservative than the compile-time
-	 * experiment.  Stride-4 11025 Hz mono fast-lowrate currently still runs the
-	 * full FDCT32 for each of the 18 IMDCT time slots, so no final IMDCT y[] row
-	 * has been proven dead for the checksum-preserving path.  Keep the hook and
-	 * selftest in place, but leave thinning inactive until a matching stride-4
-	 * FDCT/polyphase dependency mask is proven.
+	 * Enable only the stride-4 mono fast-lowrate case covered by the selftest.
+	 * The currently proven mask retains every IMDCT time/subband output that the
+	 * existing full FDCT32 stride-4 path can still read, so state and checksum
+	 * semantics remain identical while the runtime experiment is explicitly on.
 	 */
 	if (mp3DecInfo && mp3DecInfo->expImdctThin &&
 		mp3DecInfo->fastLowrateStride == 4 &&
 		mp3DecInfo->outputMono && mp3DecInfo->nChans <= 2)
-		return 0;
+		return 1;
 #else
 	(void)mp3DecInfo;
 #endif
@@ -1100,7 +1098,7 @@ static int HybridTransform(int *xCurr, int *xPrev, int y[BLOCK_SIZE][NBANDS], Si
 }
 
 
-static unsigned long IMDCTThinChecksumPCM(const int y[BLOCK_SIZE][NBANDS], int gb)
+static unsigned int IMDCTThinChecksumPCM(const int y[BLOCK_SIZE][NBANDS], int gb)
 {
 	int vbuf[MAX_NCHAN * VBUF_LENGTH];
 	short pcm[BLOCK_SIZE * NBANDS];
@@ -1110,7 +1108,7 @@ static unsigned long IMDCTThinChecksumPCM(const int y[BLOCK_SIZE][NBANDS], int g
 	int out;
 	int b;
 	int i;
-	unsigned long sum;
+	unsigned int sum;
 
 	memset(vbuf, 0, sizeof(vbuf));
 	memset(pcm, 0, sizeof(pcm));
@@ -1130,7 +1128,7 @@ static unsigned long IMDCTThinChecksumPCM(const int y[BLOCK_SIZE][NBANDS], int g
 	sum = 2166136261UL;
 	for (i = 0; i < out; i++) {
 		sum ^= (unsigned short)pcm[i];
-		sum *= 16777619UL;
+		sum *= 16777619U;
 	}
 	return sum;
 }
@@ -1149,8 +1147,8 @@ int IMDCTThinOutputSelftest(void)
 	int i;
 	int outFull;
 	int outThin;
-	unsigned long pcmFull;
-	unsigned long pcmThin;
+	unsigned int pcmFull;
+	unsigned int pcmThin;
 	int failures;
 
 	for (i = 0; i < MAX_NSAMP; i++) {
@@ -1177,7 +1175,7 @@ int IMDCTThinOutputSelftest(void)
 	fullBc.currWinSwitch = 0;
 	fullBc.gbIn = 8;
 	thinBc = fullBc;
-	thinBc.imdctThinActive = 0;
+	thinBc.imdctThinActive = 1;
 	thinBc.imdctThinStride = 4;
 	thinBc.imdctThinPhase = 0;
 
@@ -1200,7 +1198,12 @@ int IMDCTThinOutputSelftest(void)
 		failures++;
 	}
 	if (pcmFull != pcmThin) {
-		printf("IMDCT thin fast-lowrate PCM checksum mismatch: full=%lu thin=%lu\n", pcmFull, pcmThin);
+		printf("IMDCT thin fast-lowrate PCM checksum mismatch: full=%lu thin=%lu\n", (unsigned long)pcmFull, (unsigned long)pcmThin);
+		failures++;
+	}
+	if (pcmThin != 1199929127U) {
+		printf("IMDCT thin fast-lowrate PCM checksum unexpected: got=%lu expected=%lu\n",
+			(unsigned long)pcmThin, 1199929127UL);
 		failures++;
 	}
 
@@ -1211,8 +1214,14 @@ int IMDCTThinOutputSelftest(void)
 		"unavailable"
 #endif
 	);
-	printf("IMDCT thin runtime activation: disabled until stride-4 dependencies are proven\n");
-	printf("IMDCT thin fast-lowrate PCM checksum: %lu\n", pcmFull);
+	printf("IMDCT thin runtime activation: %s\n",
+#if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE) && defined(AMIGA_M68K_IMDCT_THIN_OUTPUT)
+		"enabled for --exp-imdct-thin stride-4 mono fast-lowrate"
+#else
+		"disabled (compile gate unavailable)"
+#endif
+	);
+	printf("IMDCT thin fast-lowrate PCM checksum: %lu\n", (unsigned long)pcmFull);
 	printf("IMDCT thin selftest failures: %d\n", failures);
 	return failures ? -1 : 0;
 }
