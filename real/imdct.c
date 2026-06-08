@@ -301,7 +301,7 @@ static int IMDCTApplySubbandCap(const MP3DecInfo *mp3DecInfo, BlockCount *bc)
 	 * output rates and contribute nothing audible. Inspired by MPEGA
 	 * library's freq_div=2 / sb_max=SBLIMIT/2 fast path.
 	 * nBlocksLong must also be capped to keep AntiAlias consistent. */
-	if (mp3DecInfo && bc && mp3DecInfo->fastLowrateStride >= 4 && mp3DecInfo->outputMono) {
+	if (mp3DecInfo && bc && mp3DecInfo->fastLowrateStride >= 4) {
 		if (bc->nBlocksTotal > 16) bc->nBlocksTotal = 16;
 		if (bc->nBlocksLong  > 16) bc->nBlocksLong  = 16;
 		if (bc->nBlocksPrev  > 16) bc->nBlocksPrev  = 16;
