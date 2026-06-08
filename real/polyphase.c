@@ -101,6 +101,18 @@ extern void AmigaM68KPolyphaseMonoFastStride2(short *pcm, int *vbuf,
 extern void MonoFastPolyphaseStride4_Amiga_m68k(short *pcm, int *vbuf,
 	const int *coefBase) __asm__("MonoFastPolyphaseStride4_Amiga_m68k")
 	__attribute__((weak));
+extern int StereoFastPolyphaseStride4Phase0_Amiga_m68k(short *pcm, int *vbuf,
+	const int *coefBase) __asm__("StereoFastPolyphaseStride4Phase0_Amiga_m68k")
+	__attribute__((weak));
+extern int StereoFastPolyphaseStride4Phase1_Amiga_m68k(short *pcm, int *vbuf,
+	const int *coefBase) __asm__("StereoFastPolyphaseStride4Phase1_Amiga_m68k")
+	__attribute__((weak));
+extern int StereoFastPolyphaseStride4Phase2_Amiga_m68k(short *pcm, int *vbuf,
+	const int *coefBase) __asm__("StereoFastPolyphaseStride4Phase2_Amiga_m68k")
+	__attribute__((weak));
+extern int StereoFastPolyphaseStride4Phase3_Amiga_m68k(short *pcm, int *vbuf,
+	const int *coefBase) __asm__("StereoFastPolyphaseStride4Phase3_Amiga_m68k")
+	__attribute__((weak));
 #endif
 
 static __inline short ClipToShort(int x, int fracBits)
@@ -1065,6 +1077,42 @@ int MonoFastPolyphaseStride4_Amiga_m68k_IsActive(void)
 #endif
 }
 
+int StereoFastPolyphaseStride4Phase0_Amiga_m68k_IsActive(void)
+{
+#if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE) && defined(AMIGA_M68K_ASM_POLYPHASE)
+	return StereoFastPolyphaseStride4Phase0_Amiga_m68k ? 1 : 0;
+#else
+	return 0;
+#endif
+}
+
+int StereoFastPolyphaseStride4Phase1_Amiga_m68k_IsActive(void)
+{
+#if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE) && defined(AMIGA_M68K_ASM_POLYPHASE)
+	return StereoFastPolyphaseStride4Phase1_Amiga_m68k ? 1 : 0;
+#else
+	return 0;
+#endif
+}
+
+int StereoFastPolyphaseStride4Phase2_Amiga_m68k_IsActive(void)
+{
+#if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE) && defined(AMIGA_M68K_ASM_POLYPHASE)
+	return StereoFastPolyphaseStride4Phase2_Amiga_m68k ? 1 : 0;
+#else
+	return 0;
+#endif
+}
+
+int StereoFastPolyphaseStride4Phase3_Amiga_m68k_IsActive(void)
+{
+#if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE) && defined(AMIGA_M68K_ASM_POLYPHASE)
+	return StereoFastPolyphaseStride4Phase3_Amiga_m68k ? 1 : 0;
+#else
+	return 0;
+#endif
+}
+
 int PolyphaseMonoFast_HAS_AMIGA_M68K_ASM_RUNTIME(void)
 {
 	return AmigaM68KPolyphaseMonoFast_IsActive();
@@ -1142,6 +1190,26 @@ int PolyphaseStereoFastLowrateStride4_C_REFERENCE(short *pcm, int *vbuf,
 	const int *coefBase, int phase)
 {
 #if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE)
+#if defined(AMIGA_M68K_ASM_POLYPHASE)
+	switch (phase) {
+	case 0:
+		if (StereoFastPolyphaseStride4Phase0_Amiga_m68k_IsActive())
+			return StereoFastPolyphaseStride4Phase0_Amiga_m68k(pcm, vbuf, coefBase);
+		break;
+	case 1:
+		if (StereoFastPolyphaseStride4Phase1_Amiga_m68k_IsActive())
+			return StereoFastPolyphaseStride4Phase1_Amiga_m68k(pcm, vbuf, coefBase);
+		break;
+	case 2:
+		if (StereoFastPolyphaseStride4Phase2_Amiga_m68k_IsActive())
+			return StereoFastPolyphaseStride4Phase2_Amiga_m68k(pcm, vbuf, coefBase);
+		break;
+	case 3:
+		if (StereoFastPolyphaseStride4Phase3_Amiga_m68k_IsActive())
+			return StereoFastPolyphaseStride4Phase3_Amiga_m68k(pcm, vbuf, coefBase);
+		break;
+	}
+#endif
 	return PolyphaseStereoFastLowrateList(pcm, vbuf, coefBase,
 		fastLowrateStride4Samples[phase], 8);
 #else
