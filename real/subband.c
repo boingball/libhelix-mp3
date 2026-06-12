@@ -55,6 +55,10 @@ static void FDCT32FastLowrate(int *x, int *d, int offset, int oddBlock, int gb,
 		FDCT32Half(x, d, offset, oddBlock, gb);
 		return;
 	}
+	if (stride == 4 && MP3ExperimentalFDCT32QuarterEnabled()) {
+		FDCT32Quarter(x, d, offset, oddBlock, gb);
+		return;
+	}
 #else
 	(void)stride;
 #endif
