@@ -633,8 +633,8 @@ void FDCT32Half(int *buf, int *dest, int offset, int oddBlock, int gb)
  *
  * Description: compute the 8-point lossy DCT used by stride-4 fast-lowrate output
  *
- * Notes:       this intentionally uses only subbands 0..7 and scatters only the
- *              quarter-rate rows consumed by the stride-4 polyphase path.
+ * Notes:       this reuses FDCT32Half's first pass and first radix-8 group, then
+ *              scatters only the quarter-rate rows consumed by stride-4 output.
  **************************************************************************************/
 void FDCT32Quarter(int *buf, int *dest, int offset, int oddBlock, int gb)
 {
@@ -722,26 +722,26 @@ void FDCT32Quarter(int *buf, int *dest, int offset, int oddBlock, int gb)
 	d = dest + offset + oddBase;
 	FDCT32_HALF_STORE(buf[1]);
 
+	d = dest + offset + oddBase + 256;
+	FDCT32_HALF_STORE(buf[5]);
+
+	d = dest + offset + oddBase + 512;
+	FDCT32_HALF_STORE(buf[3]);
+
+	d = dest + offset + oddBase + 768;
+	FDCT32_HALF_STORE(buf[7]);
+
 	d = dest + 16 + delayOff + evenBase;
 	FDCT32_HALF_STORE(buf[1]);
 
-	d = dest + 16 + delayOff + evenBase + 64 * 4;
-	FDCT32_HALF_STORE(buf[2]);
-
-	d = dest + offset + oddBase + 64 * 4;
-	FDCT32_HALF_STORE(buf[3]);
-
-	d = dest + 16 + delayOff + evenBase + 64 * 6;
-	FDCT32_HALF_STORE(buf[4]);
-
-	d = dest + offset + oddBase + 64 * 2;
-	FDCT32_HALF_STORE(buf[5]);
-
-	d = dest + 16 + delayOff + evenBase + 64 * 2;
+	d = dest + 16 + delayOff + evenBase + 256;
 	FDCT32_HALF_STORE(buf[6]);
 
-	d = dest + offset + oddBase + 64 * 6;
-	FDCT32_HALF_STORE(buf[7]);
+	d = dest + 16 + delayOff + evenBase + 512;
+	FDCT32_HALF_STORE(buf[2]);
+
+	d = dest + 16 + delayOff + evenBase + 768;
+	FDCT32_HALF_STORE(buf[4]);
 
 #undef FDCT32_HALF_STORE
 #else
