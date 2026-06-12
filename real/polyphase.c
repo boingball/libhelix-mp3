@@ -67,6 +67,9 @@ static int gExperimentalPolyphaseEnabled;
 #if defined(AMIGA_FAST_REDUCED_TAPS)
 static int gExperimentalReducedTapsEnabled;
 #endif
+#if defined(AMIGA_FAST_FDCT32_QUARTER)
+static int gExperimentalFDCT32QuarterEnabled;
+#endif
 
 void MP3SetExperimentalPolyphase(int enabled)
 {
@@ -95,6 +98,24 @@ int MP3ExperimentalReducedTapsEnabled(void)
 	return 0;
 #endif
 }
+
+void MP3SetExperimentalFDCT32Quarter(int enabled)
+{
+#if defined(AMIGA_FAST_FDCT32_QUARTER)
+	gExperimentalFDCT32QuarterEnabled = enabled ? 1 : 0;
+#else
+	(void)enabled;
+#endif
+}
+
+int MP3ExperimentalFDCT32QuarterEnabled(void)
+{
+#if defined(AMIGA_FAST_FDCT32_QUARTER)
+	return gExperimentalFDCT32QuarterEnabled;
+#else
+	return 0;
+#endif
+}
 #else
 void MP3SetExperimentalPolyphase(int enabled)
 {
@@ -112,6 +133,16 @@ void MP3SetExperimentalReducedTaps(int enabled)
 }
 
 int MP3ExperimentalReducedTapsEnabled(void)
+{
+	return 0;
+}
+
+void MP3SetExperimentalFDCT32Quarter(int enabled)
+{
+	(void)enabled;
+}
+
+int MP3ExperimentalFDCT32QuarterEnabled(void)
 {
 	return 0;
 }

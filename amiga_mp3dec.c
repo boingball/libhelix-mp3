@@ -38,6 +38,7 @@ static const char amigaStackCookie[] __attribute__((used)) = "$STACK:250000";
 void STATNAME(FDCT32)(int *x, int *d, int offset, int oddBlock, int gb);
 void STATNAME(FDCT32_C_REFERENCE)(int *x, int *d, int offset, int oddBlock, int gb);
 void STATNAME(FDCT32Half)(int *x, int *d, int offset, int oddBlock, int gb);
+void STATNAME(FDCT32Quarter)(int *x, int *d, int offset, int oddBlock, int gb);
 int STATNAME(FDCT32_HAS_AMIGA_M68K_ASM_RUNTIME)(void);
 void STATNAME(AntiAlias_C_REFERENCE)(int *x, int nBfly);
 void STATNAME(AntiAlias_TEST_ACTIVE)(int *x, int nBfly);
@@ -74,6 +75,7 @@ extern const int STATNAME(polyCoef)[264];
 #define AMIGA_FDCT32 STATNAME(FDCT32)
 #define AMIGA_FDCT32_C_REFERENCE STATNAME(FDCT32_C_REFERENCE)
 #define AMIGA_FDCT32_HALF STATNAME(FDCT32Half)
+#define AMIGA_FDCT32_QUARTER STATNAME(FDCT32Quarter)
 #define AMIGA_FDCT32_HAS_ASM STATNAME(FDCT32_HAS_AMIGA_M68K_ASM_RUNTIME)
 #define AMIGA_ANTIALIAS_C_REFERENCE STATNAME(AntiAlias_C_REFERENCE)
 #define AMIGA_ANTIALIAS_TEST_ACTIVE STATNAME(AntiAlias_TEST_ACTIVE)
@@ -144,6 +146,7 @@ typedef struct DecodeOptions {
 	int selftestPolyphaseStride4Stereo;
 	int selftestFastLowrate;
 	int selftestReducedTaps;
+	int selftestFdct32Quarter;
 	int selftestHuffman;
 	int selftestDequant;
 	int selftestBitstream;
@@ -155,6 +158,7 @@ typedef struct DecodeOptions {
 	int expHuff;
 	int expImdctThin;
 	int expReducedTaps;
+	int expFdct32Quarter;
 	int help;
 	int debugArgv;
 	int debugFastLowrate;
@@ -505,6 +509,7 @@ static void PrintUsage(const char *prog)
 	printf("  --exp-huff  use experimental 68030 inline-asm Huffman pair refill when compiled in\n");
 	printf("  --exp-imdct-thin request experimental fast-lowrate IMDCT output thinning\n");
 	printf("  --exp-reduced-taps use experimental 8-segment stride-4 low-rate dewindow\n");
+	printf("  --exp-fdct32-quarter use experimental stride-4 quarter-rate FDCT32 approximation\n");
 	printf("  --selftest-mulshift compare C and optional asm MULSHIFT32 helpers\n");
 	printf("  --selftest-clz compare C and optional m68k bfffo CLZ helpers\n");
 	printf("  --selftest-fdct32 compare C reference and optional m68k asm FDCT32 path\n");
@@ -518,6 +523,7 @@ static void PrintUsage(const char *prog)
 	printf("  --selftest-polyphase-stride4-stereo compare stereo stride-4 compact polyphase output\n");
 	printf("  --selftest-fastlowrate compare synthetic stride decimation paths\n");
 	printf("  --selftest-reduced-taps compare full and reduced stride-4 dewindow paths\n");
+	printf("  --selftest-fdct32-quarter inspect lossy stride-4 quarter-rate FDCT32 scatter\n");
 	printf("  --selftest-huffman compare C and active Huffman pair decode paths\n");
 	printf("  --selftest-dequant compare C and optional m68k asm dequant block paths\n");
 	printf("  --selftest-bitstream compare C and optional m68k move.l bitstream refill paths\n");
@@ -636,6 +642,8 @@ static int ParseOptions(int argc, char **argv, DecodeOptions *opt)
 			opt->selftestFastLowrate = 1;
 		} else if (!strcmp(argv[i], "--selftest-reduced-taps")) {
 			opt->selftestReducedTaps = 1;
+		} else if (!strcmp(argv[i], "--selftest-fdct32-quarter")) {
+			opt->selftestFdct32Quarter = 1;
 		} else if (!strcmp(argv[i], "--selftest-huffman")) {
 			opt->selftestHuffman = 1;
 		} else if (!strcmp(argv[i], "--selftest-dequant")) {
@@ -656,6 +664,8 @@ static int ParseOptions(int argc, char **argv, DecodeOptions *opt)
 			opt->expImdctThin = 1;
 		} else if (!strcmp(argv[i], "--exp-reduced-taps")) {
 			opt->expReducedTaps = 1;
+		} else if (!strcmp(argv[i], "--exp-fdct32-quarter")) {
+			opt->expFdct32Quarter = 1;
 		} else if (!strcmp(argv[i], "--rate")) {
 			if (++i >= argc)
 				return -1;
@@ -703,6 +713,7 @@ if (opt->selftestMulshift ||
     opt->selftestPolyphaseStride4Stereo ||
     opt->selftestFastLowrate ||
     opt->selftestReducedTaps ||
+    opt->selftestFdct32Quarter ||
     opt->selftestHuffman ||
     opt->selftestDequant ||
     opt->selftestBitstream ||
@@ -2443,6 +2454,141 @@ static double SqrtApprox(double x)
 		g = 0.5 * (g + x / g);
 	return g;
 }
+
+#if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE) && defined(AMIGA_FAST_FDCT32_QUARTER)
+static int Fdct32QuarterIsActiveIndex(const int *active, int nactive, int idx)
+{
+	int i;
+	for (i = 0; i < nactive; i++) {
+		if (active[i] == idx)
+			return 1;
+	}
+	return 0;
+}
+
+#endif
+
+static int SelftestFdct32Quarter(void)
+{
+#if !(defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE) && defined(AMIGA_FAST_FDCT32_QUARTER))
+	printf("FDCT32Quarter compile flag: no\n");
+	printf("FDCT32Quarter selftest not run: quarter FDCT body is not compiled in this build\n");
+	MP3SetExperimentalFDCT32Quarter(1);
+	printf("FDCT32Quarter stride gate: stride 2 call=%s, stride 4 call=%s\n",
+		(2 == 4 && MP3ExperimentalFDCT32QuarterEnabled()) ? "yes" : "no",
+		(4 == 4 && MP3ExperimentalFDCT32QuarterEnabled()) ? "yes" : "no");
+	MP3SetExperimentalFDCT32Quarter(0);
+	printf("FDCT32Quarter selftest PASS (unavailable in this build)\n");
+	return 0;
+#else
+	enum { CASES = 500, DEST_WORDS = 4096, ACTIVE = 9 };
+	static int hbuf[32];
+	static int qbuf[32];
+	static int hdest[DEST_WORDS];
+	static int qdest[DEST_WORDS];
+	unsigned long seed;
+	unsigned long i;
+	unsigned long activeScatterMismatches;
+	unsigned long staleMismatches;
+	double squares;
+	double samples;
+	int j;
+
+	seed = 0x4d504733UL;
+	activeScatterMismatches = 0;
+	staleMismatches = 0;
+	squares = 0.0;
+	samples = 0.0;
+
+	for (i = 0; i < CASES; i++) {
+		int offset;
+		int oddBlock;
+		int gb;
+		int oddBase;
+		int evenBase;
+		int delayOff;
+		int active[ACTIVE];
+
+		offset = (int)(i & 7UL);
+		oddBlock = (int)((i >> 3) & 1UL);
+		gb = (int)((i >> 4) & 7UL);
+		for (j = 0; j < 32; j++) {
+			seed = seed * 1664525UL + 1013904223UL;
+			if (j < 8)
+				hbuf[j] = ((int)seed) >> 9;
+			else
+				hbuf[j] = 0;
+			qbuf[j] = hbuf[j];
+		}
+		for (j = 0; j < DEST_WORDS; j++) {
+			hdest[j] = (int)(0x55aa0000UL ^ (unsigned long)j);
+			qdest[j] = hdest[j];
+		}
+
+		oddBase = oddBlock ? AMIGA_POLYPHASE_VBUF_LENGTH : 0;
+		evenBase = oddBlock ? 0 : AMIGA_POLYPHASE_VBUF_LENGTH;
+		delayOff = (offset - oddBlock) & 7;
+		active[0] = 64 * 16 + delayOff + evenBase;
+		active[1] = offset + oddBase + 64 * 0;
+		active[2] = offset + oddBase + 64 * 4;
+		active[3] = offset + oddBase + 64 * 8;
+		active[4] = offset + oddBase + 64 * 12;
+		active[5] = 16 + delayOff + evenBase + 64 * 0;
+		active[6] = 16 + delayOff + evenBase + 64 * 4;
+		active[7] = 16 + delayOff + evenBase + 64 * 8;
+		active[8] = 16 + delayOff + evenBase + 64 * 12;
+
+		AMIGA_FDCT32_HALF(hbuf, hdest, offset, oddBlock, gb);
+		AMIGA_FDCT32_QUARTER(qbuf, qdest, offset, oddBlock, gb);
+
+		for (j = 0; j < ACTIVE; j++) {
+			int idx = active[j];
+			if (hdest[idx] == (int)(0x55aa0000UL ^ (unsigned long)idx) ||
+				qdest[idx] == (int)(0x55aa0000UL ^ (unsigned long)idx) ||
+				hdest[idx + 8] != hdest[idx] || qdest[idx + 8] != qdest[idx])
+				activeScatterMismatches++;
+			else {
+				double d = (double)hdest[idx] - (double)qdest[idx];
+				squares += d * d;
+				samples += 1.0;
+			}
+		}
+		for (j = 0; j < 16; j++) {
+			int idx = offset + oddBase + 64 * j;
+			if (!Fdct32QuarterIsActiveIndex(active, ACTIVE, idx) &&
+				(qdest[idx] != 0 || qdest[idx + 8] != 0))
+				staleMismatches++;
+			idx = 16 + delayOff + evenBase + 64 * j;
+			if (!Fdct32QuarterIsActiveIndex(active, ACTIVE, idx) &&
+				(qdest[idx] != 0 || qdest[idx + 8] != 0))
+				staleMismatches++;
+		}
+	}
+
+	printf("FDCT32Quarter compile flag: %s\n",
+#ifdef AMIGA_FAST_FDCT32_QUARTER
+		"yes"
+#else
+		"no"
+#endif
+	);
+	printf("FDCT32Quarter selftest cases: %lu\n", (unsigned long)CASES);
+	printf("FDCT32Quarter active scatter positions: 9 (mismatches: %lu)\n",
+		activeScatterMismatches);
+	printf("FDCT32Quarter stale quarter-rate row clears: %lu mismatches\n",
+		staleMismatches);
+	printf("FDCT32Quarter RMS difference vs FDCT32Half active rows: %.2f counts\n",
+		SqrtApprox(squares / (samples > 0.0 ? samples : 1.0)));
+	MP3SetExperimentalFDCT32Quarter(1);
+	printf("FDCT32Quarter stride gate: stride 2 call=%s, stride 4 call=%s\n",
+		(2 == 4 && MP3ExperimentalFDCT32QuarterEnabled()) ? "yes" : "no",
+		(4 == 4 && MP3ExperimentalFDCT32QuarterEnabled()) ? "yes" : "no");
+	MP3SetExperimentalFDCT32Quarter(0);
+	printf("FDCT32Quarter selftest PASS (lossy approximation)\n");
+	return 0;
+#endif
+}
+
 
 static int SelftestReducedTaps(void)
 {
@@ -4700,6 +4846,11 @@ int main(int argc, char **argv)
 		AmigaFreeNormalizedArgs(&normalized);
 		return selftestErr;
 	}
+	if (opt.selftestFdct32Quarter) {
+		int selftestErr = SelftestFdct32Quarter();
+		AmigaFreeNormalizedArgs(&normalized);
+		return selftestErr;
+	}
 	if (opt.selftestHuffman) {
 		int selftestErr = SelftestHuffman();
 		AmigaFreeNormalizedArgs(&normalized);
@@ -4826,10 +4977,13 @@ int main(int argc, char **argv)
 	MP3SetExperimentalHuffman(opt.expHuff);
 	MP3SetExperimentalIMDCTThin(decoder, opt.expImdctThin);
 	MP3SetExperimentalReducedTaps(opt.expReducedTaps);
+	MP3SetExperimentalFDCT32Quarter(opt.expFdct32Quarter);
 	if (opt.fastLowrate) {
 		int stride = FastLowrateStrideForOutputRate(opt.outputRate);
 		if (opt.expReducedTaps && stride != 4)
 			fprintf(stderr, "warning: --exp-reduced-taps only affects 11025 Hz stride-4 fast-lowrate output\n");
+		if (opt.expFdct32Quarter && stride != 4)
+			fprintf(stderr, "warning: --exp-fdct32-quarter only affects 11025 Hz stride-4 fast-lowrate output\n");
 		MP3SetFastLowrate(decoder, stride);
 		if (opt.outputRate == 22050)
 			fprintf(stderr,
@@ -4842,6 +4996,13 @@ int main(int argc, char **argv)
 			fprintf(stderr, "warning: --exp-reduced-taps requested, but this build lacks AMIGA_FAST_REDUCED_TAPS\n");
 #endif
 		}
+		if (opt.expFdct32Quarter) {
+#if defined(AMIGA_FAST_FDCT32_QUARTER)
+			fprintf(stderr, "warning: --exp-fdct32-quarter enables lossy stride-4 quarter-rate FDCT32 synthesis\n");
+#else
+			fprintf(stderr, "warning: --exp-fdct32-quarter requested, but this build lacks AMIGA_FAST_FDCT32_QUARTER\n");
+#endif
+		}
 		if (opt.expImdctThin) {
 #if defined(AMIGA_M68K_IMDCT_THIN_OUTPUT)
 			fprintf(stderr, "warning: --exp-imdct-thin enables experimental IMDCT output-thinning bookkeeping for stride-4 mono fast-lowrate\n");
@@ -4850,7 +5011,9 @@ int main(int argc, char **argv)
 #endif
 		}
 		fprintf(stderr, "warning: --fast-lowrate is experimental, lower quality, "
-			"and only skips polyphase output samples; IMDCT/DCT32 still run full-rate\n");
+			"and only skips polyphase output samples%s\n",
+			opt.expFdct32Quarter ? "; FDCT32 uses the requested lossy quarter-rate path" :
+			"; IMDCT/DCT32 still run full-rate");
 #else
 		fprintf(stderr, "warning: --fast-lowrate is experimental and lower quality; "
 			"this build still generates full polyphase output before decimation\n");

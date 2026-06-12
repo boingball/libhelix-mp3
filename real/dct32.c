@@ -627,6 +627,115 @@ void FDCT32Half(int *buf, int *dest, int offset, int oddBlock, int gb)
 #undef FDCT32_HALF_STORE
 }
 
+
+/**************************************************************************************
+ * Function:    FDCT32Quarter
+ *
+ * Description: compute the 8-point lossy DCT used by stride-4 fast-lowrate output
+ *
+ * Notes:       this intentionally uses only subbands 0..7 and scatters only the
+ *              quarter-rate rows consumed by the stride-4 polyphase path.
+ **************************************************************************************/
+void FDCT32Quarter(int *buf, int *dest, int offset, int oddBlock, int gb)
+{
+#if defined(AMIGA_M68K) && defined(AMIGA_FAST_POLYPHASE) && defined(AMIGA_FAST_FDCT32_QUARTER)
+	int i, s, es, oddBase, evenBase, delayOff, clipBits;
+	int pp[8];
+	int p[8];
+	int q[8];
+	int *d;
+	static const int cos1_16 = (int)0x7d8a5f40UL;
+	static const int cos3_16 = (int)0x6a6d98a4UL;
+	static const int cos5_16 = (int)0x471cece7UL;
+	static const int cos7_16 = (int)0x18f8b83cUL;
+	static const int cos1_8 = (int)0x7641af3dUL;
+	static const int cos3_8 = (int)0x30fbc54dUL;
+
+	es = 0;
+	if (gb < 6) {
+		es = 6 - gb;
+		for (i = 0; i < 32; i++)
+			buf[i] >>= es;
+	}
+
+	pp[0] = buf[0] + buf[7];
+	pp[4] = FDCT32_HALF_MULSHIFT32(cos1_16, buf[0] - buf[7]);
+	pp[1] = buf[1] + buf[6];
+	pp[5] = FDCT32_HALF_MULSHIFT32(cos3_16, buf[1] - buf[6]);
+	pp[2] = buf[2] + buf[5];
+	pp[6] = FDCT32_HALF_MULSHIFT32(cos5_16, buf[2] - buf[5]);
+	pp[3] = buf[3] + buf[4];
+	pp[7] = FDCT32_HALF_MULSHIFT32(cos7_16, buf[3] - buf[4]);
+
+	p[0] = pp[0] + pp[3];
+	p[2] = FDCT32_HALF_MULSHIFT32(cos1_8, pp[0] - pp[3]);
+	p[1] = pp[1] + pp[2];
+	p[3] = FDCT32_HALF_MULSHIFT32(cos3_8, pp[1] - pp[2]);
+	p[4] = pp[4] + pp[7];
+	p[6] = FDCT32_HALF_MULSHIFT32(cos1_8, pp[4] - pp[7]);
+	p[5] = pp[5] + pp[6];
+	p[7] = FDCT32_HALF_MULSHIFT32(cos3_8, pp[5] - pp[6]);
+
+	q[0] = p[0] + p[1];
+	q[1] = FDCT32_HALF_MULSHIFT32(COS4_0, p[0] - p[1]);
+	q[2] = p[2] + p[3];
+	q[3] = FDCT32_HALF_MULSHIFT32(COS4_0, p[3] - p[2]);
+	q[4] = p[4] + p[5];
+	q[5] = FDCT32_HALF_MULSHIFT32(COS4_0, p[4] - p[5]);
+	q[6] = p[6] + p[7];
+	q[7] = FDCT32_HALF_MULSHIFT32(COS4_0, p[7] - p[6]);
+
+	oddBase = oddBlock ? VBUF_LENGTH : 0;
+	evenBase = oddBlock ? 0 : VBUF_LENGTH;
+	delayOff = (offset - oddBlock) & 7;
+
+#define FDCT32_HALF_STORE(value) do { \
+	s = (value); \
+	if (es) { clipBits = 31 - es; CLIP_2N(s, clipBits); s <<= es; } \
+	d[0] = d[8] = s; \
+} while (0)
+
+	/* Clear all rows the quarter-rate FIFO ranges can expose before scattering. */
+	d = dest + offset + oddBase;
+	for (i = 0; i < 16; i++) {
+		d[0] = d[8] = 0;
+		d += 64;
+	}
+	d = dest + 16 + delayOff + evenBase;
+	for (i = 0; i < 16; i++) {
+		d[0] = d[8] = 0;
+		d += 64;
+	}
+
+	d = dest + 64 * 16 + delayOff + evenBase;
+	FDCT32_HALF_STORE(q[1]);
+	d = dest + offset + oddBase + 64 * 0;
+	FDCT32_HALF_STORE(q[5] + q[7]);
+	d = dest + offset + oddBase + 64 * 4;
+	FDCT32_HALF_STORE(q[3]);
+	d = dest + offset + oddBase + 64 * 8;
+	FDCT32_HALF_STORE(q[7]);
+	d = dest + offset + oddBase + 64 * 12;
+	FDCT32_HALF_STORE(0);
+	d = dest + 16 + delayOff + evenBase + 64 * 0;
+	FDCT32_HALF_STORE(q[4] + q[5]);
+	d = dest + 16 + delayOff + evenBase + 64 * 4;
+	FDCT32_HALF_STORE(q[2]);
+	d = dest + 16 + delayOff + evenBase + 64 * 8;
+	FDCT32_HALF_STORE(q[6] + q[7]);
+	d = dest + 16 + delayOff + evenBase + 64 * 12;
+	FDCT32_HALF_STORE(q[0]);
+
+#undef FDCT32_HALF_STORE
+#else
+	(void)buf;
+	(void)dest;
+	(void)offset;
+	(void)oddBlock;
+	(void)gb;
+#endif
+}
+
 #undef FDCT32_HALF_MULSHIFT32
 
 #if FDCT32_HAS_AMIGA_M68K_ASM

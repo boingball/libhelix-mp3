@@ -121,6 +121,7 @@
 #define MonoFastPolyphaseStride4_Amiga_m68k_IsActive STATNAME(MonoFastPolyphaseStride4_Amiga_m68k_IsActive)
 #define FDCT32				STATNAME(FDCT32)
 #define FDCT32Half			STATNAME(FDCT32Half)
+#define FDCT32Quarter			STATNAME(FDCT32Quarter)
 #define FDCT32_C_REFERENCE	STATNAME(FDCT32_C_REFERENCE)
 #define FDCT32_HAS_AMIGA_M68K_ASM_RUNTIME STATNAME(FDCT32_HAS_AMIGA_M68K_ASM_RUNTIME)
 #define AntiAlias_C_REFERENCE STATNAME(AntiAlias_C_REFERENCE)
@@ -316,6 +317,7 @@ void IntensityProcMPEG2(int x[MAX_NCHAN][MAX_NSAMP], int nSamps, FrameHeader *fh
 // about 1 ms faster in RAM, but very large
 void FDCT32(int *x, int *d, int offset, int oddBlock, int gb);
 void FDCT32Half(int *x, int *d, int offset, int oddBlock, int gb);
+void FDCT32Quarter(int *x, int *d, int offset, int oddBlock, int gb);
 void FDCT32_C_REFERENCE(int *x, int *d, int offset, int oddBlock, int gb);
 int FDCT32_HAS_AMIGA_M68K_ASM_RUNTIME(void);
 
