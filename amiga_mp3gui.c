@@ -342,7 +342,7 @@ static int GuiOpen(HelixAmp3Gui *gui)
 
 	if (GuiCreateGadgets(gui) != 0) {
 		fprintf(stderr, "cannot create MiniAMP3 gadgets\n");
-		FreeGadList(gui->gadgets);
+		FreeGadgets(gui->gadgets);
 		gui->gadgets = NULL;
 		FreeVisualInfo(gui->vi);
 		gui->vi = NULL;
@@ -377,7 +377,7 @@ static int GuiOpen(HelixAmp3Gui *gui)
 	gui->win = OpenWindow(&nw);
 	if (!gui->win) {
 		fprintf(stderr, "cannot open MiniAMP3 window\n");
-		FreeGadList(gui->gadgets);
+		FreeGadgets(gui->gadgets);
 		gui->gadgets = NULL;
 		FreeVisualInfo(gui->vi);
 		gui->vi = NULL;
@@ -400,7 +400,7 @@ static void GuiClose(HelixAmp3Gui *gui)
 		gui->win = NULL;
 	}
 	if (gui->gadgets) {
-		FreeGadList(gui->gadgets);
+		FreeGadgets(gui->gadgets);
 		gui->gadgets = NULL;
 	}
 	if (gui->vi) {
