@@ -3573,6 +3573,29 @@ static volatile int gPlaybackInterrupted;
 #else
 static volatile sig_atomic_t gPlaybackInterrupted;
 
+#endif
+
+/* Shared status block written by the playback subprocess and read by the GUI
+ * timer tick.  Both run in the same AmigaOS process address space so a plain
+ * volatile struct is sufficient -- no Exec locking needed for this
+ * loosely-consistent, one-writer/one-reader use. */
+typedef struct GuiPlaybackStatus {
+	volatile int           phase;            /* GUIPLAY_PHASE_* constants below */
+	volatile long          spareMs;          /* last measured spare ms before buf end */
+	volatile unsigned long underruns;        /* running total underrun count */
+	volatile unsigned long decodedFrames;    /* MP3 frames decoded so far */
+	volatile int           sampleRate;       /* effective output sample rate (Hz) */
+} GuiPlaybackStatus;
+
+#define GUIPLAY_PHASE_IDLE      0   /* not playing */
+#define GUIPLAY_PHASE_BUFFERING 1   /* filling initial buffers */
+#define GUIPLAY_PHASE_PLAYING   2   /* steady-state streaming */
+#define GUIPLAY_PHASE_UNDERRUN  3   /* underrun just occurred */
+#define GUIPLAY_PHASE_DONE      4   /* playback finished normally */
+
+GuiPlaybackStatus gGuiPlaybackStatus;
+
+#if !defined(AMIGA_M68K)
 static void PlaybackSignalHandler(int signum)
 {
 	(void)signum;
@@ -3592,6 +3615,7 @@ int MP3ResetStatics(void)
 	 * MP3DecInfo by MP3InitDecoder(), so they are already fresh per decode.
 	 */
 	gPlaybackInterrupted = 0;
+	memset((void *)&gGuiPlaybackStatus, 0, sizeof(gGuiPlaybackStatus));
 	gTiming = NULL;
 	MP3SetExperimentalHuffman(0);
 	AmigaResetPolyphaseStatics();
@@ -4179,6 +4203,12 @@ static unsigned long PlaybackBufferDurationMilliseconds(const DecodeOptions *opt
 	return (samples * 1000UL) / (unsigned long)playbackRate;
 }
 
+/* NOTE: clock() on AmigaOS/libnix uses CLOCKS_PER_SEC = 50 (VBL-based),
+ * giving ~20ms resolution.  Reported spare times are therefore quantised
+ * in 20ms steps; true underruns may appear as spareMs == 0 even when a
+ * few ms of genuine headroom existed.  False-positive underrun counts at
+ * low spare values (< 20ms) are expected and not indicative of audible
+ * glitches. */
 static unsigned long PlaybackElapsedMilliseconds(clock_t start, clock_t end)
 {
 	if (CLOCKS_PER_SEC <= 0 || end <= start)
@@ -4652,6 +4682,7 @@ static int AmigaPlayStreaming(InputSource *input, HMP3Decoder decoder,
 		bufBytes, &player, buf);
 
 	/* Fill both halves before the first CMD_WRITE starts playback. */
+	gGuiPlaybackStatus.phase = GUIPLAY_PHASE_BUFFERING;
 	playbackChannels = opt->stereo ? 2UL : 1UL;
 	if (opt->stereo) {
 		len[0] = DecodeStreamFillPlaybackBuffer(&stream, opt, &player, 0,
@@ -4700,8 +4731,10 @@ static int AmigaPlayStreaming(InputSource *input, HMP3Decoder decoder,
 		if (AmigaAudioCommitPlaybackBuffer(&player, 0) != 0) {
 			fprintf(stderr, "playback buffer A CMD_WRITE byte length is invalid\n");
 			err = -1;
-		} else if (opt->debugPlay) {
-			printf("debug-play: CMD_WRITE submitted A: %lu bytes\n", len[0]);
+		} else {
+			gGuiPlaybackStatus.phase = GUIPLAY_PHASE_PLAYING;
+			if (opt->debugPlay)
+				printf("debug-play: CMD_WRITE submitted A: %lu bytes\n", len[0]);
 		}
 	}
 
@@ -4806,6 +4839,15 @@ static int AmigaPlayStreaming(InputSource *input, HMP3Decoder decoder,
 				printf("debug-play: underrun detected before buffer %s refill submit\n",
 					PlaybackBufferName(active));
 		}
+		gGuiPlaybackStatus.spareMs = spareMilliseconds;
+		gGuiPlaybackStatus.underruns = stats->underruns;
+		gGuiPlaybackStatus.decodedFrames = stats->decodedFrames;
+		if (stream.effectiveRate)
+			gGuiPlaybackStatus.sampleRate = stream.effectiveRate;
+		if (underrun)
+			gGuiPlaybackStatus.phase = GUIPLAY_PHASE_UNDERRUN;
+		else if (gGuiPlaybackStatus.phase == GUIPLAY_PHASE_UNDERRUN)
+			gGuiPlaybackStatus.phase = GUIPLAY_PHASE_PLAYING;
 	}
 
 	if (err == 0 && !gPlaybackInterrupted && player.sent[active][0]) {
@@ -4823,6 +4865,7 @@ static int AmigaPlayStreaming(InputSource *input, HMP3Decoder decoder,
 		err = -1;
 	}
 cleanup:
+	gGuiPlaybackStatus.phase = GUIPLAY_PHASE_DONE;
 	AmigaAudioClose(&player, &cleanupStatus);
 	if (cleanupStatus.canaryErrors)
 		err = -1;

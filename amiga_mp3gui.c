@@ -15,6 +15,24 @@
 #undef main
 #endif
 
+#if !defined(AMIGA_M68K)
+/* Keep in sync with definition in amiga_mp3dec.c */
+typedef struct GuiPlaybackStatus {
+	volatile int           phase;
+	volatile long          spareMs;
+	volatile unsigned long underruns;
+	volatile unsigned long decodedFrames;
+	volatile int           sampleRate;
+} GuiPlaybackStatus;
+#define GUIPLAY_PHASE_IDLE      0
+#define GUIPLAY_PHASE_BUFFERING 1
+#define GUIPLAY_PHASE_PLAYING   2
+#define GUIPLAY_PHASE_UNDERRUN  3
+#define GUIPLAY_PHASE_DONE      4
+#endif
+/* Shared status written by the playback subprocess (amiga_mp3dec.c). */
+extern GuiPlaybackStatus gGuiPlaybackStatus;
+
 #ifdef AMIGA_M68K
 #include <exec/types.h>
 #include <exec/tasks.h>
@@ -185,6 +203,7 @@ typedef struct HelixAmp3Gui {
 	int   totalSecs;
 	int   elapsedSecs;
 	int   launchBufferSecs;
+	unsigned long lastUnderrunCount;   /* last underrun count seen from IPC */
 } HelixAmp3Gui;
 
 typedef struct HelixAmp3Args {
@@ -1342,7 +1361,9 @@ static void DrawProgress(HelixAmp3Gui *gui)
 	if (gui->smallFont)
 		SetFont(rp, gui->smallFont);
 	if (fill > 0) {
-		SetAPen(rp, 3);
+		int fillPen = (gui->playbackActive &&
+			gGuiPlaybackStatus.phase == GUIPLAY_PHASE_BUFFERING) ? 2 : 3;
+		SetAPen(rp, fillPen);
 		RectFill(rp, PROG_X, PROG_TOP_Y,
 			PROG_X + fill - 1, PROG_TOP_Y + PROG_H - 1);
 	}
@@ -1405,7 +1426,56 @@ static void HandleTimerSignal(HelixAmp3Gui *gui)
 	gui->timerIsArt = 0;
 
 	if (gui->playbackActive && !expiredWasArt) {
-		gui->elapsedSecs++;
+		int phase = gGuiPlaybackStatus.phase;
+		unsigned long frames = gGuiPlaybackStatus.decodedFrames;
+		int rate = gGuiPlaybackStatus.sampleRate;
+		unsigned long underruns = gGuiPlaybackStatus.underruns;
+		long spareMs = gGuiPlaybackStatus.spareMs;
+
+		/* Derive audio position from decoded frames rather than wall-clock ticks.
+		 * Each MP3 frame = 1152 samples.  Subtract bufferSeconds for pipeline lag.
+		 * Fall back to incrementing elapsedSecs by 1 if no frame data yet. */
+		if (frames > 0 && rate > 0) {
+			long audioSecs = (long)((frames * 1152UL) / (unsigned long)rate);
+			audioSecs -= gui->bufferSeconds;
+			if (audioSecs < 0)
+				audioSecs = 0;
+			if (gui->totalSecs > 0 && audioSecs > gui->totalSecs)
+				audioSecs = gui->totalSecs;
+			gui->elapsedSecs = (int)audioSecs + gui->launchBufferSecs;
+		} else {
+			gui->elapsedSecs++;
+		}
+
+		switch (phase) {
+		case GUIPLAY_PHASE_BUFFERING: {
+			char buf[64];
+			sprintf(buf, "Buffering... (%ds)", gui->bufferSeconds);
+			SetStatus(gui, buf);
+			break;
+		}
+		case GUIPLAY_PHASE_UNDERRUN:
+			if (underruns != gui->lastUnderrunCount) {
+				char buf[64];
+				gui->lastUnderrunCount = underruns;
+				sprintf(buf, "Underrun! (total: %lu)", underruns);
+				SetStatus(gui, buf);
+			}
+			break;
+		case GUIPLAY_PHASE_PLAYING: {
+			char buf[64];
+			if (gui->lastUnderrunCount > 0)
+				sprintf(buf, "Playing (%lu underruns, %ldms spare)",
+					underruns, spareMs);
+			else
+				sprintf(buf, "Playing (%ldms spare)", spareMs);
+			SetStatus(gui, buf);
+			break;
+		}
+		default:
+			break;
+		}
+
 		DrawProgress(gui);
 	}
 	PumpArtDecode(gui);
@@ -2027,6 +2097,10 @@ static void StartPlayback(HelixAmp3Gui *gui)
 	CancelArtDecode(gui);
 	DrawArtPanel(gui);
 	gui->elapsedSecs = 0;
+	gui->lastUnderrunCount = 0;
+	/* Zero the IPC block so stale data from a previous run is not visible
+	 * before the new subprocess writes its first update. */
+	memset((void *)&gGuiPlaybackStatus, 0, sizeof(gGuiPlaybackStatus));
 	gui->launchBufferSecs = gui->decodeThenPlay ? 0 : gui->bufferSeconds;
 	DrawProgress(gui);
 	BuildPlaybackArgs(gui, &gGuiArgs);
