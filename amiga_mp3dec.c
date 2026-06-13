@@ -116,6 +116,7 @@ extern const int STATNAME(polyCoef)[264];
 #define AMIGA_IMDCT_NBANDS 32
 #define AMIGA_POLYPHASE_NBANDS 32
 #define AMIGA_POLYPHASE_VBUF_LENGTH (17 * 2 * AMIGA_POLYPHASE_NBANDS)
+#define AMIGA_AUDIO_MAX_CHANNEL_BYTES 65534UL
 
 #define OUT_PCM16 0
 #define OUT_S8    1
@@ -3920,10 +3921,13 @@ static void AmigaPlaybackCopy(const signed char *src, signed char *dest,
 	CopyMem((APTR)src, (APTR)dest, bytes);
 }
 
+static unsigned long PlaybackMaxChunkBytes(int stereo);
+
 static int AmigaAudioPrepare(AmigaAudioPlayer *player, int index,
 	signed char *buf, unsigned long len)
 {
-	if (len == 0 || (player->stereo && (len & 1UL)))
+	if (len == 0 || len > PlaybackMaxChunkBytes(player->stereo) ||
+		(player->stereo && (len & 1UL)))
 		return -1;
 	if (player->stereo) {
 		unsigned long frames = len / 2UL;
@@ -4116,8 +4120,25 @@ static int AmigaAudioAllocWorkBuffers(AmigaAudioPlayer *player, int stereo,
 }
 #endif
 
+static unsigned long PlaybackMaxChunkBytes(int stereo)
+{
+	return AMIGA_AUDIO_MAX_CHANNEL_BYTES * (stereo ? 2UL : 1UL);
+}
+
 static unsigned long AlignPlaybackChunkBytes(unsigned long bytes, int stereo)
 {
+	unsigned long maxBytes;
+
+	/*
+	 * Both streaming playback and --decode-then-play eventually submit these
+	 * chunks through audio.device.  Keep every per-channel CMD_WRITE length below
+	 * Paula's 16-bit DMA length boundary; otherwise a 22050 Hz multi-second
+	 * buffer can play only its wrapped/truncated beginning while the decoder has
+	 * already advanced to the next much-later chunk.
+	 */
+	maxBytes = PlaybackMaxChunkBytes(stereo);
+	if (bytes > maxBytes)
+		bytes = maxBytes;
 	if (stereo && (bytes & 1UL))
 		bytes--;
 	if (bytes == 0)
@@ -4128,13 +4149,10 @@ static unsigned long AlignPlaybackChunkBytes(unsigned long bytes, int stereo)
 static unsigned long PlaybackRequestedChunkBytes(const DecodeOptions *opt,
 	int playbackRate)
 {
-	unsigned long bytes;
-
 	if (playbackRate <= 0)
 		playbackRate = opt->outputRate > 0 ? opt->outputRate : 8287;
-	bytes = (unsigned long)playbackRate *
+	return (unsigned long)playbackRate *
 		(unsigned long)opt->bufferSeconds * (opt->stereo ? 2UL : 1UL);
-	return AlignPlaybackChunkBytes(bytes, opt->stereo);
 }
 
 static int PlaybackHalfBufferSamples(const DecodeOptions *opt,
