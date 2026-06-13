@@ -851,19 +851,23 @@ static int DecodeJpegToGrey(const unsigned char *jpegData, unsigned long jpegByt
 	unsigned char status;
 	unsigned char xMap[MAX_JPEG_DIM];
 	unsigned char yMap[MAX_JPEG_DIM];
+	static unsigned long greyAccum[ART_W * ART_H];
+	static unsigned short greyCount[ART_W * ART_H];
 	int mcuIndex;
 	int i;
 
 	if (isPng || !jpegData || jpegBytes <= 4 || !greyOut ||
-		outW <= 0 || outW > 255 || outH <= 0 || outH > 255)
+		outW <= 0 || outW > ART_W || outH <= 0 || outH > ART_H)
 		return -1;
 	src.data = jpegData;
 	src.pos = 0;
 	src.size = jpegBytes;
 	memset(greyOut, 0x80, (size_t)(outW * outH));
-	/* Reduced decoding keeps only the JPEG block averages, which is much
-	 * faster and visually sufficient for the fixed 64x64 artwork thumbnail. */
-	status = pjpeg_decode_init(&info, pjpeg_cb, &src, 1);
+	memset(greyAccum, 0, sizeof(greyAccum));
+	memset(greyCount, 0, sizeof(greyCount));
+	/* Full MCU decoding gives the tiny artwork thumbnail enough source
+	 * samples to preserve cover edges and faces instead of block averages. */
+	status = pjpeg_decode_init(&info, pjpeg_cb, &src, 0);
 	if (status != 0 || info.m_width <= 0 || info.m_height <= 0 ||
 		info.m_width > MAX_JPEG_DIM || info.m_height > MAX_JPEG_DIM)
 		return -1;
@@ -909,11 +913,34 @@ static int DecodeJpegToGrey(const unsigned char *jpegData, unsigned long jpegByt
 					g = ((int)info.m_pMCUBufR[off] * 30 +
 						(int)info.m_pMCUBufG[off] * 59 +
 						(int)info.m_pMCUBufB[off] * 11) / 100;
-				greyOut[dstY * outW + dstX] = (unsigned char)g;
+				{
+					int dst = dstY * outW + dstX;
+
+					greyAccum[dst] += (unsigned long)g;
+					if (greyCount[dst] != 0xffff)
+						greyCount[dst]++;
+				}
 			}
 		}
 	}
+	for (i = 0; i < outW * outH; i++) {
+		if (greyCount[i])
+			greyOut[i] = (unsigned char)((greyAccum[i] +
+				(greyCount[i] / 2)) / greyCount[i]);
+	}
 	return 0;
+}
+
+static int ArtPenCount(const struct RastPort *rp)
+{
+	int penCount = 2;
+
+	if (rp && rp->BitMap && rp->BitMap->Depth > 1) {
+		penCount = 1 << rp->BitMap->Depth;
+		if (penCount > 16)
+			penCount = 16;
+	}
+	return penCount;
 }
 
 static void DrawArtPanel(HelixAmp3Gui *gui)
@@ -930,13 +957,8 @@ static void DrawArtPanel(HelixAmp3Gui *gui)
 		GTBB_Recessed, TRUE,
 		TAG_DONE);
 	if (gui->artValid) {
-		int penCount = 2;
+		int penCount = ArtPenCount(rp);
 
-		if (rp->BitMap && rp->BitMap->Depth > 1) {
-			penCount = 1 << rp->BitMap->Depth;
-			if (penCount > 4)
-				penCount = 4;
-		}
 		for (y = 0; y < ART_H; y++) {
 			for (x = 0; x < ART_W; x++) {
 				int g = gui->artGreyBuf[y * ART_W + x];
