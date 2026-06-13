@@ -1315,7 +1315,6 @@ static int GuiOpen(HelixAmp3Gui *gui)
 	gui->win = OpenWindowTags(&nw,
 		WA_InnerWidth, GUI_WIN_W,
 		WA_InnerHeight, GUI_WIN_H,
-		WA_Font, (ULONG)&gui->smallTextAttr,
 		TAG_DONE);
 	if (!gui->win) {
 		fprintf(stderr, "cannot open MiniAMP3 window\n");
