@@ -1193,7 +1193,10 @@ static struct Gadget *MakeGadget(HelixAmp3Gui *gui, struct Gadget *prev,
 	ng.ng_Height = height;
 	ng.ng_GadgetText = (UBYTE *)label;
 	ng.ng_GadgetID = id;
+	if (kind == TEXT_KIND)
 	ng.ng_TextAttr = &gTopaz8Attr;
+else
+	ng.ng_TextAttr = NULL;
 	if (kind == BUTTON_KIND)
 		ng.ng_Flags = PLACETEXT_IN;
 	else if (kind == CHECKBOX_KIND)
@@ -1222,7 +1225,7 @@ static int GuiCreateGadgets(HelixAmp3Gui *gui)
 		GUI_MARGIN_L + 48, ROW_FILE, TEXT_COL_W - 100, 16, "File:",
 		GTTX_Text, (ULONG)gui->fileText,
 		GTTX_Border, TRUE,
-		GTTX_TextAttr, (ULONG)&gTopaz8Attr,
+		TAG_IGNORE, 0,
 		TAG_IGNORE, 0);
 	if (!gad)
 		return -1;
@@ -1237,28 +1240,28 @@ static int GuiCreateGadgets(HelixAmp3Gui *gui)
 		return -1;
 
 	gui->gadTitle = gad = MakeGadget(gui, gad, TEXT_KIND, GID_TITLE,
-		GUI_MARGIN_L + 44, ROW_TITLE, TEXT_COL_W - 44, 16, "Title:",
+		GUI_MARGIN_L + 54, ROW_TITLE, TEXT_COL_W - 54, 16, "Title:",
 		GTTX_Text, (ULONG)"-",
 		GTTX_Border, TRUE,
-		GTTX_TextAttr, (ULONG)&gTopaz8Attr,
+		TAG_IGNORE, 0,
 		TAG_IGNORE, 0);
 	if (!gad)
 		return -1;
 
 	gui->gadArtist = gad = MakeGadget(gui, gad, TEXT_KIND, GID_ARTIST,
-		GUI_MARGIN_L + 44, ROW_ARTIST, TEXT_COL_W - 44, 16, "Artist:",
+		GUI_MARGIN_L + 60, ROW_ARTIST, TEXT_COL_W - 54, 16, "Artist:",
 		GTTX_Text, (ULONG)"-",
 		GTTX_Border, TRUE,
-		GTTX_TextAttr, (ULONG)&gTopaz8Attr,
+		TAG_IGNORE, 0,
 		TAG_IGNORE, 0);
 	if (!gad)
 		return -1;
 
 	gui->gadAlbum = gad = MakeGadget(gui, gad, TEXT_KIND, GID_ALBUM,
-		GUI_MARGIN_L + 44, ROW_ALBUM, TEXT_COL_W - 44, 16, "Album:",
+		GUI_MARGIN_L + 54, ROW_ALBUM, TEXT_COL_W - 54, 16, "Album:",
 		GTTX_Text, (ULONG)"-",
 		GTTX_Border, TRUE,
-		GTTX_TextAttr, (ULONG)&gTopaz8Attr,
+		TAG_IGNORE, 0,
 		TAG_IGNORE, 0);
 	if (!gad)
 		return -1;
@@ -1337,10 +1340,10 @@ static int GuiCreateGadgets(HelixAmp3Gui *gui)
 		return -1;
 
 	gui->gadStatus = gad = MakeGadget(gui, gad, TEXT_KIND, GID_STATUS,
-		GUI_MARGIN_L + 50, ROW_STATUS, GUI_WIN_W - GUI_MARGIN_L - GUI_MARGIN_R - 70, 16, "Status:",
+		GUI_MARGIN_L + 60, ROW_STATUS, GUI_WIN_W - GUI_MARGIN_L - GUI_MARGIN_R - 80, 16, "Status:",
 		GTTX_Text, (ULONG)gui->statusText,
 		GTTX_Border, TRUE,
-		GTTX_TextAttr, (ULONG)&gTopaz8Attr,
+		TAG_IGNORE, 0,
 		TAG_IGNORE, 0);
 	if (!gad)
 		return -1;
@@ -1412,7 +1415,6 @@ static int GuiOpen(HelixAmp3Gui *gui)
 	gui->win = OpenWindowTags(&nw,
 		WA_InnerWidth, GUI_WIN_W,
 		WA_InnerHeight, GUI_WIN_H,
-		WA_Font, (ULONG)&gTopaz8Attr,
 		TAG_DONE);
 	if (!gui->win) {
 		fprintf(stderr, "cannot open MiniAMP3 window\n");
@@ -1423,7 +1425,6 @@ static int GuiOpen(HelixAmp3Gui *gui)
 		SetFont(gui->win->RPort, gui->smallFont);
 
 	gui->visualInfo = GetVisualInfo(gui->win->WScreen,
-		GTVI_Default, TRUE,
 		TAG_DONE);
 	if (!gui->visualInfo) {
 		fprintf(stderr, "cannot create GadTools visual info\n");
