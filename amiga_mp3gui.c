@@ -431,7 +431,7 @@ static void DrawVuFrame(HelixAmp3Gui *gui)
 	DrawBevelBox(gui->win->RPort,
 		VU_X - 18, VU_TOP_Y - 4,
 		VU_W + 24, 2 * VU_H + VU_GAP + 8,
-		GT_VisualInfo, gui->visualInfo,
+		GT_VisualInfo, (ULONG)gui->visualInfo,
 		GTBB_Recessed, TRUE,
 		TAG_DONE);
 }
